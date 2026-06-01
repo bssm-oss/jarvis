@@ -41,13 +41,20 @@ Traditional carrier voice — the agent picks up, transcribes the caller, replie
 
 ```toml
 [channels.voice_wake]
-wake_word = "hey zeroclaw"                     # default "hey zeroclaw" (case-insensitive substring match)
+wake_word = "jarvis"                           # default "hey zeroclaw" (case-insensitive substring match)
 silence_timeout_ms = 2000                      # default 2000; ms of silence before finalising capture
 energy_threshold = 0.01                        # default 0.01; RMS energy below this is treated as silence
 max_capture_secs = 30                          # default 30; hard cap on capture duration
+clap_gate_enabled = true                       # default false; require the clap gesture before wake-word capture
+clap_count = 2                                 # default 2; two claps arms wake-word capture
+clap_energy_threshold = 0.25                   # default 0.25; RMS clap peak threshold
+clap_window_ms = 900                           # default 900; max time between clap peaks
+clap_cooldown_ms = 120                         # default 120; ignore duplicate peaks inside this gap
+clap_gate_timeout_ms = 5000                    # default 5000; time to say the wake word after clapping
+activation_ack_text = "네 주인님 무엇을 도와드릴까요?"
 ```
 
-Runs locally, listens on the mic, triggers agent interaction when it hears the wake phrase. Useful for:
+Runs locally, listens on the mic, triggers agent interaction when it hears the wake phrase. When `clap_gate_enabled = true`, Voice Wake first waits for the clap sequence, then confirms the configured wake phrase, opens the desktop voice-activation overlay, speaks `activation_ack_text`, and dispatches the next transcribed utterance through the normal ZeroClaw channel pipeline. Useful for:
 
 - Physical voice assistants on SBCs
 - Desktop "hotword → ask" workflows

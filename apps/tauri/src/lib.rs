@@ -111,6 +111,7 @@ pub fn run() {
             commands::permissions::get_runtime_platform,
             commands::permissions::request_permission,
             commands::permissions::open_privacy_settings,
+            commands::window::show_voice_activation,
             commands::onboarding::get_onboarding_state,
             commands::onboarding::complete_onboarding,
             commands::onboarding::reset_onboarding,

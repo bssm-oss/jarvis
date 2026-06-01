@@ -13,3 +13,4 @@ export const Doctor = lazy(() => import('../pages/Doctor'));
 export const Pairing = lazy(() => import('../pages/Pairing'));
 export const Canvas = lazy(() => import('../pages/Canvas'));
 export const Onboard = lazy(() => import('../pages/onboard/Onboard'));
+export const VoiceActivation = lazy(() => import('../pages/VoiceActivation'));

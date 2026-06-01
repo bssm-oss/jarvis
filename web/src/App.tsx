@@ -1,14 +1,16 @@
-import { Component, createContext, useContext, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
+import { Component, createContext, useContext, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 
 import { loadLocale, saveLocale } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DraftContext, useDraftStore } from './hooks/useDraft';
+import { useSSE } from './hooks/useSSE';
 import { getAdminPairCode, getOnboardStatus } from './lib/api';
 import { basePath } from './lib/basePath';
 import { ConfigDraftProvider } from './lib/draftStore';
 import { setLocale, type Locale } from './lib/i18n';
+import { dispatchVoiceActivationSignal, signalFromSseEvent } from './lib/voiceActivation';
 import { Router } from './router/router';
 
 // Locale context
@@ -200,6 +202,50 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
   );
 }
 
+type TauriCore = {
+  invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+};
+
+function getTauriCore(): TauriCore | null {
+  return (
+    (window as Window & { __TAURI__?: { core?: TauriCore } }).__TAURI__?.core ?? null
+  );
+}
+
+function VoiceActivationBridge() {
+  const navigate = useNavigate();
+  const { events } = useSSE({ filterTypes: ['message'], maxEvents: 40 });
+  const handledRef = useRef('');
+
+  useEffect(() => {
+    const latest = events[events.length - 1];
+    if (!latest) return;
+    const signal = signalFromSseEvent(latest);
+    if (!signal) return;
+
+    const key = `${latest.id ?? latest.timestamp ?? ''}:${signal.phase}:${signal.createdAt}`;
+    if (handledRef.current === key) return;
+    handledRef.current = key;
+
+    dispatchVoiceActivationSignal(signal);
+
+    if (
+      signal.phase === 'double_clap_detected' ||
+      signal.phase === 'wake_name_audio_started' ||
+      signal.phase === 'wake_confirmed'
+    ) {
+      sessionStorage.setItem('zeroclaw_voice_ack', signal.ackText);
+      navigate('/voice-activation');
+      const core = getTauriCore();
+      if (core?.invoke) {
+        void core.invoke('show_voice_activation').catch(() => undefined);
+      }
+    }
+  }, [events, navigate]);
+
+  return null;
+}
+
 function AppContent() {
   const { isAuthenticated, requiresPairing, loading, pair, logout } = useAuth();
   const [locale, setLocaleState] = useState(loadLocale());
@@ -238,6 +284,7 @@ function AppContent() {
       <ConfigDraftProvider>
         <LocaleContext.Provider value={{ locale, setAppLocale }}>
           <FreshInstallRedirect />
+          <VoiceActivationBridge />
           <Router />
         </LocaleContext.Provider>
       </ConfigDraftProvider>

@@ -729,3 +729,215 @@ code, kbd, pre {
   color: var(--pc-text-muted);
   margin-top: 0.25rem;
 }
+
+/* ── Voice activation overlay ── */
+.voice-activation-screen {
+  --voice-level: 0.08;
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #201d1d;
+  color: #fdfcfc;
+  isolation: isolate;
+}
+
+.voice-activation-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(253, 252, 252, 0.03) 0 1px, transparent 1px 96px),
+    repeating-linear-gradient(0deg, rgba(253, 252, 252, 0.025) 0 1px, transparent 1px 96px);
+  opacity: 0.72;
+  z-index: -2;
+}
+
+.voice-activation-screen::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(253, 252, 252, 0.08);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.voice-activation-frame {
+  min-height: 100vh;
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  padding: clamp(28px, 5vh, 56px) 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 4.5vh, 42px);
+}
+
+.voice-activation-kicker {
+  font-family: var(--pc-font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0;
+  color: #9a9898;
+  text-transform: uppercase;
+}
+
+.live2d-avatar-host {
+  width: min(74vw, 520px);
+  min-width: 260px;
+  height: min(68vh, 620px);
+  min-height: 360px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(253, 252, 252, 0.13);
+  background: #302c2c;
+  border-radius: 4px;
+  transform: translate3d(0, 0, 0) scale(calc(1 + var(--voice-level) * 0.025));
+  transition: transform 90ms linear, border-color 120ms linear;
+}
+
+.live2d-avatar-host.is-ready {
+  border-color: rgba(253, 252, 252, calc(0.16 + var(--voice-level) * 0.3));
+}
+
+.live2d-avatar-host::before,
+.live2d-avatar-host::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.live2d-avatar-host::before {
+  inset: 12px;
+  border: 1px solid rgba(253, 252, 252, 0.08);
+}
+
+.live2d-avatar-host::after {
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  height: 2px;
+  z-index: 0;
+  background: #30d158;
+  transform-origin: left center;
+  transform: scaleX(calc(0.18 + var(--voice-level) * 0.82));
+  opacity: calc(0.44 + var(--voice-level) * 0.44);
+}
+
+.live2d-avatar-grid {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(253, 252, 252, 0.04) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(0deg, rgba(253, 252, 252, 0.035) 0 1px, transparent 1px 32px);
+  opacity: 0.52;
+}
+
+.live2d-avatar-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.live2d-avatar-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: #fdfcfc;
+  font-family: var(--pc-font-mono);
+}
+
+.live2d-avatar-host.is-ready .live2d-avatar-fallback {
+  display: none;
+}
+
+.live2d-fallback-head {
+  width: min(48%, 210px);
+  aspect-ratio: 0.82;
+  border: 1px solid rgba(253, 252, 252, 0.34);
+  border-radius: 44% 44% 36% 36%;
+  position: relative;
+  transform:
+    translateY(calc(var(--voice-level) * -8px))
+    rotate(calc((var(--voice-level) - 0.08) * 5deg));
+}
+
+.live2d-fallback-eye,
+.live2d-fallback-mouth {
+  position: absolute;
+  display: block;
+  background: #fdfcfc;
+}
+
+.live2d-fallback-eye {
+  top: 38%;
+  width: 16%;
+  height: 2px;
+}
+
+.live2d-fallback-eye-left {
+  left: 25%;
+}
+
+.live2d-fallback-eye-right {
+  right: 25%;
+}
+
+.live2d-fallback-mouth {
+  left: 42%;
+  bottom: 28%;
+  width: 16%;
+  height: calc(4px + var(--voice-level) * 34px);
+  border-radius: 999px;
+  transform: translateY(50%);
+}
+
+.live2d-fallback-status {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  font-size: 0.76rem;
+  line-height: 1;
+  color: #9a9898;
+}
+
+.voice-activation-text {
+  margin: 0;
+  max-width: min(88vw, 780px);
+  text-align: center;
+  color: #fdfcfc;
+  font-family: var(--pc-font-mono);
+  font-size: clamp(1.1rem, 2.3vw, 1.75rem);
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+@media (max-width: 640px) {
+  .voice-activation-screen::after {
+    inset: 10px;
+  }
+
+  .live2d-avatar-host {
+    width: min(88vw, 360px);
+    min-width: 230px;
+    height: min(58vh, 470px);
+    min-height: 320px;
+  }
+
+  .voice-activation-frame {
+    gap: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live2d-avatar-host {
+    transition: none;
+  }
+}
