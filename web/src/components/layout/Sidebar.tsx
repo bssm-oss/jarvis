@@ -15,6 +15,8 @@ import { t } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import { getStatus } from '@/lib/api';
 
+const zeroClawLogoSrc = `${basePath}${import.meta.env.PROD ? '/_app/logo.png' : '/logo.png'}`;
+
 interface NavItem {
   to: string;
   icon: typeof LayoutDashboard;
@@ -173,7 +175,7 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
       <div className="relative shrink-0">
         <div className="absolute -inset-1.5 rounded-xl" style={{ background: 'linear-gradient(135deg, rgba(var(--pc-accent-rgb), 0.15), rgba(var(--pc-accent-rgb), 0.05))' }} />
         <img
-          src={`${basePath}/logo.png`}
+          src={zeroClawLogoSrc}
           alt="ZeroClaw"
           className="relative h-9 w-9 rounded-xl object-cover"
           onError={(e) => {
