@@ -12717,6 +12717,12 @@ pub struct VoiceWakeConfig {
     #[serde(default = "default_voice_wake_activation_ack_text")]
     pub activation_ack_text: String,
 
+    /// Milliseconds to wait after wake confirmation before capturing the next
+    /// utterance. This gives the activation TTS prompt time to play without
+    /// being captured as the user's command. Default: `1800`.
+    #[serde(default = "default_voice_wake_post_wake_capture_delay_ms")]
+    pub post_wake_capture_delay_ms: u32,
+
     /// Tools excluded from this channel's tool spec. When set, these tools
     /// are not exposed to the model when responding via this channel.
     #[serde(default)]
@@ -12763,6 +12769,10 @@ fn default_voice_wake_activation_ack_text() -> String {
     "네 주인님 무엇을 도와드릴까요?".into()
 }
 
+fn default_voice_wake_post_wake_capture_delay_ms() -> u32 {
+    1800
+}
+
 impl Default for VoiceWakeConfig {
     fn default() -> Self {
         Self {
@@ -12778,6 +12788,7 @@ impl Default for VoiceWakeConfig {
             clap_cooldown_ms: default_voice_wake_clap_cooldown_ms(),
             clap_gate_timeout_ms: default_voice_wake_clap_gate_timeout_ms(),
             activation_ack_text: default_voice_wake_activation_ack_text(),
+            post_wake_capture_delay_ms: default_voice_wake_post_wake_capture_delay_ms(),
             excluded_tools: Vec::new(),
         }
     }

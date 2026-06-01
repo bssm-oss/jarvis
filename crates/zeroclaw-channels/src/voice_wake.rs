@@ -223,6 +223,8 @@ impl Channel for VoiceWakeChannel {
         let max_capture = Duration::from_secs(u64::from(config.max_capture_secs));
         let clap_gate_enabled = config.clap_gate_enabled;
         let clap_gate_timeout = Duration::from_millis(u64::from(config.clap_gate_timeout_ms));
+        let post_wake_capture_delay =
+            Duration::from_millis(u64::from(config.post_wake_capture_delay_ms));
         let mut clap_detector = ClapDetector::new(
             config.clap_count,
             config.clap_energy_threshold,
@@ -290,6 +292,8 @@ impl Channel for VoiceWakeChannel {
         let mut capture_buf: Vec<f32> = Vec::new();
         let mut last_voice_at = Instant::now();
         let mut capture_start = Instant::now();
+        let mut capture_not_before = Instant::now();
+        let mut capture_has_voice = false;
         let mut msg_counter: u64 = 0;
         let mut clap_gate_armed = false;
         let mut triggered_has_voice = false;
@@ -513,17 +517,21 @@ impl Channel for VoiceWakeChannel {
                                                 "wake_word": wake_word.as_str(),
                                                 "wake_match": if matched_by_wake_word { "wake_word" } else { "clap_voice_fallback" },
                                                 "ack_text": config.activation_ack_text.as_str(),
+                                                "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
                                                 "energy": energy,
                                             })
                                         ),
                                         "VoiceWake: wake word detected — capturing utterance"
                                     );
+                                    let capture_ready_at = Instant::now() + post_wake_capture_delay;
                                     state = WakeState::Capturing;
                                     clap_gate_armed = false;
                                     triggered_has_voice = false;
+                                    capture_has_voice = false;
                                     capture_buf.clear();
-                                    last_voice_at = Instant::now();
-                                    capture_start = Instant::now();
+                                    capture_not_before = capture_ready_at;
+                                    last_voice_at = capture_ready_at;
+                                    capture_start = capture_ready_at;
                                 } else {
                                     ::zeroclaw_log::record!(
                                         INFO,
@@ -544,6 +552,7 @@ impl Channel for VoiceWakeChannel {
                                     state = WakeState::Listening;
                                     clap_gate_armed = false;
                                     triggered_has_voice = false;
+                                    capture_has_voice = false;
                                     capture_buf.clear();
                                 }
                             }
@@ -561,22 +570,58 @@ impl Channel for VoiceWakeChannel {
                                 state = WakeState::Listening;
                                 clap_gate_armed = false;
                                 triggered_has_voice = false;
+                                capture_has_voice = false;
                                 capture_buf.clear();
                             }
                         }
                     }
                 }
                 WakeState::Capturing => {
+                    let now = Instant::now();
+                    if now < capture_not_before {
+                        continue;
+                    }
+
                     capture_buf.extend_from_slice(&chunk);
 
                     if energy >= energy_threshold {
-                        last_voice_at = Instant::now();
+                        capture_has_voice = true;
+                        last_voice_at = now;
                     }
 
-                    let since_voice = last_voice_at.elapsed();
-                    let since_start = capture_start.elapsed();
+                    let since_voice = now.duration_since(last_voice_at);
+                    let since_start = now.duration_since(capture_start);
 
-                    if since_voice >= silence_timeout || since_start >= max_capture {
+                    let should_transcribe = should_finish_utterance_capture(
+                        capture_has_voice,
+                        since_voice,
+                        since_start,
+                        silence_timeout,
+                        max_capture,
+                    );
+
+                    if should_transcribe {
+                        if !capture_has_voice {
+                            ::zeroclaw_log::record!(
+                                INFO,
+                                ::zeroclaw_log::Event::new(
+                                    module_path!(),
+                                    ::zeroclaw_log::Action::Note
+                                )
+                                .with_attrs(::serde_json::json!({
+                                    "voice_activation": "activated",
+                                    "phase": "utterance_timeout_no_voice",
+                                    "max_capture_secs": config.max_capture_secs,
+                                })),
+                                "VoiceWake: utterance capture timed out before voice started"
+                            );
+                            state = WakeState::Listening;
+                            clap_gate_armed = false;
+                            triggered_has_voice = false;
+                            capture_buf.clear();
+                            continue;
+                        }
+
                         ::zeroclaw_log::record!(
                             INFO,
                             ::zeroclaw_log::Event::new(
@@ -600,6 +645,7 @@ impl Channel for VoiceWakeChannel {
                             Ok(text) => {
                                 let trimmed = text.trim().to_string();
                                 if !trimmed.is_empty() {
+                                    let normalized = normalize_voice_utterance_text(&trimmed);
                                     msg_counter += 1;
                                     let ts = SystemTime::now()
                                         .duration_since(UNIX_EPOCH)
@@ -610,12 +656,13 @@ impl Channel for VoiceWakeChannel {
                                         format!("voice_wake_{msg_counter}"),
                                         "voice_user",
                                         "voice_user",
-                                        trimmed,
+                                        normalized,
                                         "voice_wake",
                                         ts,
                                     );
                                     msg.channel_alias = Some(self_alias.clone());
-                                    let content_len = msg.content.len();
+                                    let dispatch_text = msg.content.clone();
+                                    let content_len = dispatch_text.len();
 
                                     match tx.send(msg).await {
                                         Ok(()) => {
@@ -629,6 +676,8 @@ impl Channel for VoiceWakeChannel {
                                                     "voice_activation": "task",
                                                     "phase": "utterance_dispatched",
                                                     "content_len": content_len,
+                                                    "text": dispatch_text,
+                                                    "raw_text": text,
                                                 })),
                                                 "VoiceWake: utterance dispatched"
                                             );
@@ -648,6 +697,22 @@ impl Channel for VoiceWakeChannel {
                                             );
                                         }
                                     }
+                                } else {
+                                    ::zeroclaw_log::record!(
+                                        INFO,
+                                        ::zeroclaw_log::Event::new(
+                                            module_path!(),
+                                            ::zeroclaw_log::Action::Note
+                                        )
+                                        .with_attrs(
+                                            ::serde_json::json!({
+                                                "voice_activation": "task",
+                                                "phase": "utterance_empty",
+                                                "raw_text": text,
+                                            })
+                                        ),
+                                        "VoiceWake: utterance transcription was empty"
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -667,6 +732,7 @@ impl Channel for VoiceWakeChannel {
                         state = WakeState::Listening;
                         clap_gate_armed = false;
                         triggered_has_voice = false;
+                        capture_has_voice = false;
                         capture_buf.clear();
                     }
                 }
@@ -690,6 +756,22 @@ pub fn compute_rms_energy(samples: &[f32]) -> f32 {
     }
     let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
     (sum_sq / samples.len() as f32).sqrt()
+}
+
+fn should_finish_utterance_capture(
+    capture_has_voice: bool,
+    since_voice: Duration,
+    since_start: Duration,
+    silence_timeout: Duration,
+    max_capture: Duration,
+) -> bool {
+    (capture_has_voice && since_voice >= silence_timeout) || since_start >= max_capture
+}
+
+fn normalize_voice_utterance_text(text: &str) -> String {
+    text.trim()
+        .replace("최적과", "최저가")
+        .replace("최적가", "최저가")
 }
 
 /// Return whether an RMS energy sample should be counted as a clap peak.
@@ -844,6 +926,51 @@ mod tests {
         assert!(
             energy < 0.01,
             "Very quiet signal should be below default threshold"
+        );
+    }
+
+    #[test]
+    fn utterance_capture_waits_for_voice_before_silence_timeout() {
+        let silence_timeout = Duration::from_millis(1200);
+        let max_capture = Duration::from_secs(8);
+
+        assert!(
+            !should_finish_utterance_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "silence before the user starts speaking must not end capture"
+        );
+
+        assert!(should_finish_utterance_capture(
+            true,
+            Duration::from_millis(1500),
+            Duration::from_secs(3),
+            silence_timeout,
+            max_capture,
+        ));
+
+        assert!(should_finish_utterance_capture(
+            false,
+            Duration::from_secs(9),
+            Duration::from_secs(9),
+            silence_timeout,
+            max_capture,
+        ));
+    }
+
+    #[test]
+    fn normalize_voice_utterance_repairs_common_price_mishearing() {
+        assert_eq!(
+            normalize_voice_utterance_text("최적과 소고기를 찾아줘"),
+            "최저가 소고기를 찾아줘"
+        );
+        assert_eq!(
+            normalize_voice_utterance_text(" 최적가 상품 찾아줘 "),
+            "최저가 상품 찾아줘"
         );
     }
 
@@ -1017,6 +1144,7 @@ mod tests {
         assert_eq!(config.clap_cooldown_ms, 120);
         assert_eq!(config.clap_gate_timeout_ms, 5000);
         assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 1800);
     }
 
     #[test]
@@ -1033,6 +1161,7 @@ mod tests {
         assert!((config.energy_threshold - 0.01).abs() < f32::EPSILON);
         assert_eq!(config.clap_count, 2);
         assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 1800);
     }
 
     #[test]
@@ -1049,6 +1178,7 @@ mod tests {
             clap_cooldown_ms = 100
             clap_gate_timeout_ms = 4000
             activation_ack_text = "네 주인님 무엇을 도와드릴까요?"
+            post_wake_capture_delay_ms = 2500
         "#;
         let config: VoiceWakeConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.wake_word, "hello bot");
@@ -1062,6 +1192,7 @@ mod tests {
         assert_eq!(config.clap_cooldown_ms, 100);
         assert_eq!(config.clap_gate_timeout_ms, 4000);
         assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 2500);
     }
 
     #[test]

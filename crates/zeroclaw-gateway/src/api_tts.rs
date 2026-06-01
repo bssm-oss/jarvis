@@ -28,7 +28,8 @@ const GPT_SOVITS_ROOT: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovi
 const GPT_SOVITS_API: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/api.py";
 const SOVITS_MODEL: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/SoVITS_weights_v2ProPlus/yuni_vocals_v2proplus_fresh_e5_s1360.pth";
 const GPT_MODEL: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/GPT_weights_v2ProPlus/yuni_vocals_v2proplus_fresh-e5.ckpt";
-const REF_WAV: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/reference/general_ref.wav";
+const REF_WAV: &str =
+    "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/reference/general_ref.wav";
 const REF_TEXT_PATH: &str =
     "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/reference/general_ref.txt";
 const REF_TEXT: &str =
