@@ -1,4 +1,4 @@
-import { Component, createContext, useContext, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -10,7 +10,12 @@ import { getAdminPairCode, getOnboardStatus } from './lib/api';
 import { basePath } from './lib/basePath';
 import { ConfigDraftProvider } from './lib/draftStore';
 import { setLocale, type Locale } from './lib/i18n';
-import { dispatchVoiceActivationSignal, signalFromSseEvent } from './lib/voiceActivation';
+import {
+  dispatchVoiceActivationSignal,
+  fetchVoiceActivationSignalsSince,
+  signalFromSseEvent,
+  type VoiceActivationSignal,
+} from './lib/voiceActivation';
 import { Router } from './router/router';
 
 const zeroClawLogoSrc = `${basePath}${import.meta.env.PROD ? '/_app/logo.png' : '/logo.png'}`;
@@ -217,20 +222,19 @@ function getTauriCore(): TauriCore | null {
 function VoiceActivationBridge() {
   const navigate = useNavigate();
   const { events } = useSSE({ filterTypes: ['message'], maxEvents: 40 });
-  const handledRef = useRef('');
+  const handledRef = useRef(new Set<string>());
+  const lastPollMsRef = useRef(Date.now() - 15_000);
 
-  useEffect(() => {
-    const latest = events[events.length - 1];
-    if (!latest) return;
-    const signal = signalFromSseEvent(latest);
-    if (!signal) return;
+  const handleSignal = useCallback((signal: VoiceActivationSignal, key: string) => {
+    if (handledRef.current.has(key)) return;
+    handledRef.current.add(key);
+    if (handledRef.current.size > 200) {
+      handledRef.current = new Set(Array.from(handledRef.current).slice(-100));
+    }
 
-    const key = `${latest.id ?? latest.timestamp ?? ''}:${signal.phase}:${signal.createdAt}`;
-    if (handledRef.current === key) return;
-    handledRef.current = key;
+    lastPollMsRef.current = Math.max(lastPollMsRef.current, signal.createdAt);
 
     dispatchVoiceActivationSignal(signal);
-
     if (
       signal.phase === 'double_clap_detected' ||
       signal.phase === 'wake_name_audio_started' ||
@@ -243,7 +247,45 @@ function VoiceActivationBridge() {
         void core.invoke('show_voice_activation').catch(() => undefined);
       }
     }
-  }, [events, navigate]);
+  }, [navigate]);
+
+  useEffect(() => {
+    const latest = events[events.length - 1];
+    if (!latest) return;
+    const signal = signalFromSseEvent(latest);
+    if (!signal) return;
+
+    handleSignal(signal, `${latest.id ?? latest['@timestamp'] ?? latest.timestamp ?? ''}:${signal.phase}`);
+  }, [events, handleSignal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const envelopes = await fetchVoiceActivationSignalsSince(lastPollMsRef.current);
+        if (!cancelled) {
+          for (const envelope of envelopes) {
+            handleSignal(envelope.signal, envelope.key);
+          }
+        }
+      } catch {
+        // SSE remains the primary path; polling only patches missed live events.
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => void poll(), 750);
+        }
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [handleSignal]);
 
   return null;
 }
