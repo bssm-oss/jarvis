@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Live2DJarvisAvatar from '../components/Live2DJarvisAvatar';
 import { useSSE } from '../hooks/useSSE';
+import { useLocalTts } from '../hooks/useLocalTts';
 import {
   DEFAULT_VOICE_ACK,
   VOICE_ACTIVATION_EVENT,
@@ -96,7 +97,7 @@ export default function VoiceActivation() {
     createdAt: Date.now(),
   }));
   const spokenRef = useRef('');
-  const [isJarvisSpeaking, setIsJarvisSpeaking] = useState(false);
+  const localTts = useLocalTts(true);
   const micLevel = useMicrophoneLevel(true);
 
   useEffect(() => {
@@ -120,24 +121,14 @@ export default function VoiceActivation() {
     spokenRef.current = key;
     sessionStorage.setItem('zeroclaw_voice_ack', signal.ackText);
 
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(signal.ackText);
-      utterance.lang = 'ko-KR';
-      utterance.rate = 0.96;
-      utterance.pitch = 0.86;
-      utterance.onstart = () => setIsJarvisSpeaking(true);
-      utterance.onend = () => setIsJarvisSpeaking(false);
-      utterance.onerror = () => setIsJarvisSpeaking(false);
-      window.speechSynthesis.speak(utterance);
-    }
-  }, [signal]);
+    void localTts.speak(signal.ackText);
+  }, [localTts.speak, signal]);
 
   const level = useMemo(() => {
     const eventLevel = signal?.amplitude ? Math.min(1, signal.amplitude * 2.5) : 0;
-    const baseline = signal?.phase === 'wake_confirmed' || isJarvisSpeaking ? 0.18 : 0.08;
+    const baseline = signal?.phase === 'wake_confirmed' || localTts.speaking ? 0.18 : 0.08;
     return Math.max(baseline, micLevel, eventLevel);
-  }, [isJarvisSpeaking, micLevel, signal]);
+  }, [localTts.speaking, micLevel, signal]);
 
   const style = {
     '--voice-level': level.toFixed(3),
@@ -150,9 +141,12 @@ export default function VoiceActivation() {
         <Live2DJarvisAvatar
           level={level}
           phase={signal?.phase ?? 'idle'}
-          speaking={isJarvisSpeaking}
+          speaking={localTts.speaking}
         />
         <p className="voice-activation-text">{labelForPhase(signal)}</p>
+        {localTts.error && (
+          <p className="voice-activation-tts-status">음성 오류: {localTts.error}</p>
+        )}
       </div>
     </main>
   );

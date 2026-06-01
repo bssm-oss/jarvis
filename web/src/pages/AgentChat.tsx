@@ -1,10 +1,12 @@
-import { memo, useState, useEffect, useRef, useCallback } from 'react';
+import { memo, useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { Send, Square, Bot, User, AlertCircle, Copy, Check, X, Trash2, Minimize2, Maximize2, ChevronDown, Wrench } from 'lucide-react';
+import { Send, Square, Bot, User, AlertCircle, Copy, Check, X, Trash2, Minimize2, Maximize2, ChevronDown, Wrench, Volume2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AgentProvider, useAgent, type ChatMessage } from '@/contexts/AgentContext';
 import { useDraft } from '@/hooks/useDraft';
+import { useLocalTts } from '@/hooks/useLocalTts';
+import type { LocalTtsRuntimeStatus } from '@/lib/localTts';
 import { t } from '@/lib/i18n';
 
 import ToolCallCard from '@/components/ToolCallCard';
@@ -51,6 +53,7 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
   } = useAgent();
 
   const { draft, saveDraft, clearDraft } = useDraft(`${DRAFT_KEY_PREFIX}.${agentAlias}`);
+  const localTts = useLocalTts(true);
   const [input, setInput] = useState(draft);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -70,6 +73,7 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const spokenMessageIdsRef = useRef<Set<string> | null>(null);
 
   // Persist draft to in-memory store so it survives route changes
   useEffect(() => {
@@ -83,6 +87,21 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typing, streamingContent]);
+
+  useEffect(() => {
+    if (spokenMessageIdsRef.current === null) {
+      spokenMessageIdsRef.current = new Set(messages.map((message) => message.id));
+      return;
+    }
+
+    for (const message of messages) {
+      if (spokenMessageIdsRef.current.has(message.id)) continue;
+      spokenMessageIdsRef.current.add(message.id);
+      if (message.role === 'agent' && !message.toolCall && message.content.trim()) {
+        void localTts.speak(message.content);
+      }
+    }
+  }, [messages, localTts.speak]);
 
   // Close model dropdown when clicking outside
   useEffect(() => {
@@ -206,6 +225,9 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
     }
   };
 
+  const ttsTone = localTtsTone(localTts.status);
+  const ttsTitle = localTts.error ? `Local GPT-SoVITS: ${localTts.error}` : 'Local GPT-SoVITS';
+
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
       {/* Header with model selector */}
@@ -215,7 +237,17 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
           <span className="text-sm font-medium" style={{ color: 'var(--pc-text-primary)' }}>{agentAlias}</span>
         </div>
 
-        <div className="relative" ref={modelDropdownRef}>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium"
+            style={ttsTone}
+            title={ttsTitle}
+          >
+            <Volume2 className="h-3.5 w-3.5" />
+            <span>{localTtsLabel(localTts.status)}</span>
+          </div>
+
+          <div className="relative" ref={modelDropdownRef}>
           <button
             type="button"
             onClick={() => setShowModelDropdown((v) => !v)}
@@ -277,6 +309,7 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
 
@@ -451,6 +484,43 @@ function AgentChatInner({ agentAlias }: { agentAlias: string }) {
       </div>
     </div>
   );
+}
+
+function localTtsLabel(status: LocalTtsRuntimeStatus): string {
+  if (status === 'ready') return '음성 대기';
+  if (status === 'speaking') return '음성 재생';
+  if (status === 'error') return '음성 오류';
+  if (status === 'starting') return '음성 준비';
+  return '음성';
+}
+
+function localTtsTone(status: LocalTtsRuntimeStatus): CSSProperties {
+  if (status === 'error') {
+    return {
+      background: 'var(--color-status-error-alpha-08)',
+      borderColor: 'var(--color-status-error-alpha-30)',
+      color: 'var(--color-status-error)',
+    };
+  }
+  if (status === 'starting') {
+    return {
+      background: 'var(--color-status-warning-alpha-05)',
+      borderColor: 'var(--color-status-warning-alpha-20)',
+      color: 'var(--color-status-warning)',
+    };
+  }
+  if (status === 'speaking') {
+    return {
+      background: 'var(--pc-accent-glow)',
+      borderColor: 'var(--pc-accent-dim)',
+      color: 'var(--pc-accent)',
+    };
+  }
+  return {
+    background: 'var(--pc-bg-elevated)',
+    borderColor: 'var(--pc-border)',
+    color: 'var(--pc-text-muted)',
+  };
 }
 
 // Each chat message is rendered through this memoized component so that

@@ -23,6 +23,7 @@ pub mod api_personality;
 #[cfg(feature = "plugins-wasm")]
 pub mod api_plugins;
 pub mod api_skills;
+pub mod api_tts;
 #[cfg(feature = "webauthn")]
 pub mod api_webauthn;
 pub mod auth_rate_limit;
@@ -1428,6 +1429,9 @@ pub async fn run_gateway(
         .route("/api/cli-tools", get(api::handle_api_cli_tools))
         .route("/api/channels", get(api::handle_api_channels))
         .route("/api/health", get(api::handle_api_health))
+        .route("/api/tts/status", get(api_tts::handle_status))
+        .route("/api/tts/speak", post(api_tts::handle_speak))
+        .route("/api/tts/audio/{file_name}", get(api_tts::handle_audio))
         .route("/api/sessions", get(api::handle_api_sessions_list))
         .route("/api/sessions/running", get(api::handle_api_sessions_running))
         .route(

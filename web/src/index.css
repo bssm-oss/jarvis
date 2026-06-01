@@ -919,6 +919,16 @@ code, kbd, pre {
   text-wrap: balance;
 }
 
+.voice-activation-tts-status {
+  margin: -22px 0 0;
+  max-width: min(88vw, 680px);
+  color: #ff4466;
+  font-family: var(--pc-font-mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .voice-activation-screen::after {
     inset: 10px;
