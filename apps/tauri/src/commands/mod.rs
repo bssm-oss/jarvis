@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod audio;
 pub mod channels;
 pub mod gateway;
 pub mod onboarding;

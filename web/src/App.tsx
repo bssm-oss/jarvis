@@ -10,6 +10,7 @@ import { getAdminPairCode, getOnboardStatus } from './lib/api';
 import { basePath } from './lib/basePath';
 import { ConfigDraftProvider } from './lib/draftStore';
 import { setLocale, type Locale } from './lib/i18n';
+import { getTauriCore } from './lib/tauri';
 import {
   dispatchVoiceActivationSignal,
   fetchVoiceActivationSignalsSince,
@@ -206,16 +207,6 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
         </form>
       </div>
     </div>
-  );
-}
-
-type TauriCore = {
-  invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-};
-
-function getTauriCore(): TauriCore | null {
-  return (
-    (window as Window & { __TAURI__?: { core?: TauriCore } }).__TAURI__?.core ?? null
   );
 }
 

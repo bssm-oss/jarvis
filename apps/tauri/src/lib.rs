@@ -107,6 +107,7 @@ pub fn run() {
             commands::pairing::initiate_pairing,
             commands::pairing::get_devices,
             commands::agent::send_message,
+            commands::audio::play_local_tts_audio,
             commands::permissions::get_permissions_status,
             commands::permissions::get_runtime_platform,
             commands::permissions::request_permission,

@@ -1,5 +1,6 @@
 import { apiFetch } from './api';
 import { apiOrigin } from './basePath';
+import { getTauriCore, isTauri } from './tauri';
 
 export type LocalTtsRuntimeStatus = 'idle' | 'starting' | 'ready' | 'speaking' | 'error';
 
@@ -37,7 +38,7 @@ export function speakLocalTts(text: string): Promise<LocalTtsSpeakResponse> {
 
 export async function playLocalTtsResponse(response: LocalTtsSpeakResponse): Promise<void> {
   for (const segment of response.segments) {
-    await playAudio(resolveAudioUrl(segment.url));
+    await playTtsAudio(resolveAudioUrl(segment.url));
   }
 }
 
@@ -76,4 +77,26 @@ function playAudio(url: string): Promise<void> {
       });
     }
   });
+}
+
+async function playTtsAudio(url: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await playNativeAudio(url);
+      return;
+    } catch (error) {
+      console.warn('[ZeroClaw] Native TTS playback failed; falling back to Web Audio.', error);
+    }
+  }
+
+  await playAudio(url);
+}
+
+async function playNativeAudio(url: string): Promise<void> {
+  const core = getTauriCore();
+  if (!isTauri() || !core?.invoke) {
+    throw new Error('Native audio playback is unavailable outside Tauri');
+  }
+
+  await core.invoke('play_local_tts_audio', { url });
 }

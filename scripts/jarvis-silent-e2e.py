@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -270,5 +271,5 @@ if __name__ == "__main__":
         print(exc.stdout or "", end="")
         print(exc.stderr or "", end="", file=sys.stderr)
         fail(f"command timed out after {exc.timeout}s: {' '.join(exc.cmd)}")
-    except urllib.error.URLError as exc:
+    except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
         fail(f"HTTP request failed: {exc}")
