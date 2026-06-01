@@ -4,16 +4,20 @@
 
 Flow under test:
 
-`/voice-activation` loads -> wake confirmation event displays the Jarvis acknowledgement -> local GPT-SoVITS speaks through the web audio path -> repeated text reuses the cached WAV.
+`/voice-activation` loads -> wake confirmation event displays the Jarvis acknowledgement -> local GPT-SoVITS speaks through the web audio path -> repeated text reuses the cached WAV -> the demo video shows a short real conversation flow after wake.
 
 ## Artifacts
 
 - Demo video with Yuni TTS audio track: `output/playwright/jarvis-tts-demo.mp4`
+- Conversation demo video with user/Jarvis turns: `output/playwright/jarvis-tts-conversation-demo.mp4`
 - Raw Playwright capture: `output/playwright/jarvis-tts-demo-raw.webm`
+- Raw conversation capture: `output/playwright/jarvis-tts-conversation-demo-raw.webm`
 - Idle screenshot: `output/playwright/jarvis-tts-demo-01-idle.png`
 - Wake-confirmed screenshot: `output/playwright/jarvis-tts-demo-02-wake-confirmed.png`
 - Cache-proof screenshot: `output/playwright/jarvis-tts-demo-03-cache.png`
+- Conversation screenshot: `output/playwright/jarvis-tts-conversation-demo.png`
 - Machine-readable proof: `output/playwright/jarvis-tts-demo-proof.json`
+- Conversation proof: `output/playwright/jarvis-tts-conversation-demo-proof.json`
 
 ## Runtime Evidence
 
@@ -45,6 +49,8 @@ curl -sS http://127.0.0.1:42617/health
 launchctl print gui/501/ai.zeroclaw.jarvis-daemon
 lsof -nP -iTCP:9880 -sTCP:LISTEN
 ffprobe -v error -show_entries format=duration,size -show_streams -of json output/playwright/jarvis-tts-demo.mp4
+ffprobe -v error -show_entries format=duration,size -show_streams -of json output/playwright/jarvis-tts-conversation-demo.mp4
+ffmpeg -hide_banner -i output/playwright/jarvis-tts-conversation-demo.mp4 -af volumedetect -vn -sn -dn -f null -
 ```
 
 ## Results
@@ -65,10 +71,14 @@ ffprobe -v error -show_entries format=duration,size -show_streams -of json outpu
 | Voice wake build/runtime | PASS, default build includes `voice-wake`; health exposes `channel:voice_wake.jarvis` as `ok` |
 | Launchd daemon | PASS, `ai.zeroclaw.jarvis-daemon` is running and bound to `127.0.0.1:42617` |
 | Demo video | PASS, 1280x720 MP4, 11.88s, H.264 video + AAC mono audio |
+| Conversation demo video | PASS, 1280x720 MP4, 34.28s, H.264 video + AAC mono audio |
+| Conversation audio | PASS, includes macOS Korean user voice turns and local GPT-SoVITS Jarvis reply turns; `volumedetect` reported mean volume `-27.3 dB`, max volume `-4.8 dB` |
+| Conversation cache invariant | PASS, repeated Jarvis status reply reused cached WAV (`cached=true`) |
 
 ## Notes
 
-- Browser plugin setup was attempted first, but the in-app browser route was unavailable for this session. Validation and recording used the available Playwright runtime.
+- The first TTS demo fell back to Playwright when the in-app browser route was unavailable. The later conversation update used the in-app Browser for page identity/screenshot verification, then Playwright CLI plus `ffmpeg` for recording and audio muxing.
 - The demo MP4 overlays short status labels for readability. The app UI underneath is the live `/voice-activation` route.
 - The MP4 includes the generated Yuni acknowledgement WAV as an audio track delayed to line up with the wake-confirmed step.
+- The conversation MP4 includes the wake sequence plus two user/Jarvis turns. User utterances are generated with the local macOS Korean voice; Jarvis utterances are generated through the local GPT-SoVITS server and cached by text.
 - The original Desktop GPT-SoVITS tree is still the source asset, but the app runtime now uses a copied local tree under `~/.zeroclaw/runtimes/yuni-gpt-sovits`. This avoids macOS background-process stalls while opening Desktop paths from the launchd daemon.
