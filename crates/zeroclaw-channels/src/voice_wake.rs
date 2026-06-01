@@ -643,24 +643,19 @@ impl Channel for VoiceWakeChannel {
                             .await
                         {
                             Ok(text) => {
-                                let trimmed = text.trim().to_string();
-                                if !trimmed.is_empty() {
-                                    let normalized = normalize_voice_utterance_text(&trimmed);
-                                    msg_counter += 1;
-                                    let ts = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs();
+                                let next_msg_counter = msg_counter.saturating_add(1);
+                                let ts = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
 
-                                    let mut msg = ChannelMessage::new(
-                                        format!("voice_wake_{msg_counter}"),
-                                        "voice_user",
-                                        "voice_user",
-                                        normalized,
-                                        "voice_wake",
-                                        ts,
-                                    );
-                                    msg.channel_alias = Some(self_alias.clone());
+                                if let Some(msg) = build_voice_wake_message(
+                                    &self_alias,
+                                    next_msg_counter,
+                                    &text,
+                                    ts,
+                                ) {
+                                    msg_counter = next_msg_counter;
                                     let dispatch_text = msg.content.clone();
                                     let content_len = dispatch_text.len();
 
@@ -772,6 +767,29 @@ fn normalize_voice_utterance_text(text: &str) -> String {
     text.trim()
         .replace("최적과", "최저가")
         .replace("최적가", "최저가")
+}
+
+fn build_voice_wake_message(
+    channel_alias: &str,
+    msg_counter: u64,
+    raw_text: &str,
+    timestamp: u64,
+) -> Option<ChannelMessage> {
+    let trimmed = raw_text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut msg = ChannelMessage::new(
+        format!("voice_wake_{msg_counter}"),
+        "voice_user",
+        "voice_user",
+        normalize_voice_utterance_text(trimmed),
+        "voice_wake",
+        timestamp,
+    );
+    msg.channel_alias = Some(channel_alias.to_string());
+    Some(msg)
 }
 
 /// Return whether an RMS energy sample should be counted as a clap peak.
@@ -972,6 +990,86 @@ mod tests {
             normalize_voice_utterance_text(" 최적가 상품 찾아줘 "),
             "최저가 상품 찾아줘"
         );
+    }
+
+    #[test]
+    fn voice_wake_message_sets_alias_and_normalized_content() {
+        let msg = build_voice_wake_message("jarvis", 7, " 최적과 소고기를 찾아줘 ", 1_780_000_000)
+            .expect("non-empty voice text should dispatch");
+
+        assert_eq!(msg.id, "voice_wake_7");
+        assert_eq!(msg.sender, "voice_user");
+        assert_eq!(msg.reply_target, "voice_user");
+        assert_eq!(msg.content, "최저가 소고기를 찾아줘");
+        assert_eq!(msg.channel, "voice_wake");
+        assert_eq!(msg.channel_alias.as_deref(), Some("jarvis"));
+        assert_eq!(msg.timestamp, 1_780_000_000);
+
+        assert!(build_voice_wake_message("jarvis", 8, "   ", 1).is_none());
+    }
+
+    #[test]
+    fn jarvis_double_clap_wake_and_price_command_flow_dispatches_task() {
+        let config = VoiceWakeConfig {
+            wake_word: "jarvis".into(),
+            clap_gate_enabled: true,
+            clap_count: 2,
+            clap_energy_threshold: 0.015,
+            clap_window_ms: 1200,
+            clap_cooldown_ms: 90,
+            silence_timeout_ms: 1200,
+            energy_threshold: 0.002,
+            max_capture_secs: 8,
+            post_wake_capture_delay_ms: 3000,
+            ..VoiceWakeConfig::default()
+        };
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            config.clap_count,
+            config.clap_energy_threshold,
+            Duration::from_millis(u64::from(config.clap_window_ms)),
+            Duration::from_millis(u64::from(config.clap_cooldown_ms)),
+        );
+
+        assert_eq!(
+            detector.observe(0.020, start),
+            ClapGateEvent::FirstClap,
+            "first clap should arm the gesture gate"
+        );
+        assert_eq!(
+            detector.observe(0.023, start + Duration::from_millis(160)),
+            ClapGateEvent::Complete,
+            "second clap inside the configured window should complete the gate"
+        );
+
+        let wake_text = "Jarvis";
+        let lower = wake_text.to_lowercase();
+        assert!(wake_word_matches(&lower, &config.wake_word));
+
+        let silence_timeout = Duration::from_millis(u64::from(config.silence_timeout_ms));
+        let max_capture = Duration::from_secs(u64::from(config.max_capture_secs));
+        assert!(
+            !should_finish_utterance_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "post-wake silence before the user speaks must not dispatch an empty command"
+        );
+        assert!(should_finish_utterance_capture(
+            true,
+            Duration::from_millis(1300),
+            Duration::from_millis(3600),
+            silence_timeout,
+            max_capture,
+        ));
+
+        let msg = build_voice_wake_message("jarvis", 1, "최적과 소고기를 찾아줘", 1)
+            .expect("recognized command should dispatch");
+        assert_eq!(msg.channel_alias.as_deref(), Some("jarvis"));
+        assert_eq!(msg.content, "최저가 소고기를 찾아줘");
     }
 
     // ── Clap gate tests ───────────────────────────────────

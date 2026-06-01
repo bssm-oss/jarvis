@@ -218,7 +218,7 @@ pub fn fast_trim_tool_results(
         if msg.role == "tool" && msg.content.len() > trim_to {
             let original_len = msg.content.len();
             msg.content = truncate_tool_message(&msg.content, trim_to);
-            saved += original_len - msg.content.len();
+            saved += original_len.saturating_sub(msg.content.len());
         }
     }
     saved
@@ -486,5 +486,15 @@ mod tests {
             truncated.starts_with(marker),
             "expected head to retain full marker, got: {truncated}"
         );
+    }
+
+    #[test]
+    fn fast_trim_tool_results_does_not_underflow_when_marker_overhead_grows_output() {
+        let mut history = vec![ChatMessage::tool("x".repeat(2001))];
+
+        let saved = fast_trim_tool_results(&mut history, 0);
+
+        assert_eq!(saved, 0);
+        assert!(!history[0].content.is_empty());
     }
 }
