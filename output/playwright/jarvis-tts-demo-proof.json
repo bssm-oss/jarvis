@@ -1,0 +1,53 @@
+{
+  "url": "http://127.0.0.1:42617/voice-activation",
+  "title": "ZeroClaw",
+  "bodyText": "JARVIS\n\n네 주인님 무엇을 도와드릴까요?\n\n3. 캐시 검증 완료\n첫 요청 cached=false\n두 번째 요청 cached=true",
+  "playCount": 1,
+  "status": {
+    "status": "ready",
+    "endpoint": "http://127.0.0.1:9880/",
+    "cache_dir": "/Users/heodongun/.zeroclaw/data/cache/yuni-tts",
+    "bind_host": "127.0.0.1",
+    "port": 9880
+  },
+  "firstSegment": {
+    "text": "시연 영상 기록용 캐시 확인 문장입니다.",
+    "url": "/api/tts/audio/24e8a4e81f6c05e3dcf349c53b390aa8c7e233c2db093b21e31627463e209249.wav",
+    "cached": false
+  },
+  "secondSegment": {
+    "text": "시연 영상 기록용 캐시 확인 문장입니다.",
+    "url": "/api/tts/audio/24e8a4e81f6c05e3dcf349c53b390aa8c7e233c2db093b21e31627463e209249.wav",
+    "cached": true
+  },
+  "consoleMessages": [
+    {
+      "type": "log",
+      "text": "\n %c %c %c PixiJS 6.5.10 - ✰ WebGL 2 ✰  %c  %c  http://www.pixijs.com/  %c %c ♥%c♥%c♥ \n\n background: #ff66a5; padding:5px 0; background: #ff66a5; padding:5px 0; color: #ff66a5; background: #030307; padding:5px 0; background: #ff66a5; padding:5px 0; background: #ffc3dc; padding:5px 0; background: #ff66a5; padding:5px 0; color: #ff2424; background: #fff; padding:5px 0; color: #ff2424; background: #fff; padding:5px 0; color: #ff2424; background: #fff; padding:5px 0;"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x134004d6600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"
+    },
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x134004d7800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    },
+    {
+      "type": "log",
+      "text": "[CSM][I]Live2D Cubism Core version: 05.01.0000 (83951616)\n"
+    },
+    {
+      "type": "log",
+      "text": "[CSM][I]CubismFramework.startUp() is complete.\n"
+    },
+    {
+      "type": "log",
+      "text": "[CSM][I]CubismFramework.initialize() is complete.\n"
+    },
+    {
+      "type": "log",
+      "text": "Live2D Cubism SDK Core Version 5.1.0"
+    }
+  ]
+}
