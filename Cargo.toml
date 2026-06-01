@@ -271,6 +271,7 @@ default-channels = [
     "channel-mochat", "channel-wecom", "channel-wecom-ws", "channel-clawdtalk",
     "channel-webhook", "channel-acp-server", "channel-whatsapp-cloud",
     "channel-voice-call",
+    "voice-wake",
 ]
 
 # Major subsystems — each forwards to exactly ONE crate

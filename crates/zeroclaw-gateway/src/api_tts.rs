@@ -23,12 +23,17 @@ const TTS_COMPONENT: &str = "local_tts.yuni";
 const TTS_HOST: &str = "127.0.0.1";
 const TTS_PORT: u16 = 9880;
 const TTS_ENDPOINT: &str = "http://127.0.0.1:9880/";
-const START_SCRIPT: &str =
-    "/Users/heodongun/Desktop/유니 목소리/outputs/new_train_vocals/deploy/start_yuni_tts_api.sh";
-const SOVITS_MODEL: &str = "/Users/heodongun/Desktop/유니 목소리/.deps/GPT-SoVITS/SoVITS_weights_v2ProPlus/yuni_vocals_v2proplus_fresh_e5_s1360.pth";
-const GPT_MODEL: &str = "/Users/heodongun/Desktop/유니 목소리/.deps/GPT-SoVITS/GPT_weights_v2ProPlus/yuni_vocals_v2proplus_fresh-e5.ckpt";
-const REF_WAV: &str = "/Users/heodongun/Desktop/유니 목소리/outputs/new_train_vocals/deploy/reference/general_ref.wav";
-const REF_TEXT_PATH: &str = "/Users/heodongun/Desktop/유니 목소리/outputs/new_train_vocals/deploy/reference/general_ref.txt";
+const CONDA_BIN: &str = "/opt/homebrew/bin/conda";
+const GPT_SOVITS_ROOT: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits";
+const GPT_SOVITS_API: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/api.py";
+const SOVITS_MODEL: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/SoVITS_weights_v2ProPlus/yuni_vocals_v2proplus_fresh_e5_s1360.pth";
+const GPT_MODEL: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/GPT_weights_v2ProPlus/yuni_vocals_v2proplus_fresh-e5.ckpt";
+const REF_WAV: &str = "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/reference/general_ref.wav";
+const REF_TEXT_PATH: &str =
+    "/Users/heodongun/.zeroclaw/runtimes/yuni-gpt-sovits/reference/general_ref.txt";
+const REF_TEXT: &str =
+    "그러면은 이 사보에서 뭐 하고 싶은 거 있어? 그냥 자유로운 영혼이 되어서 여기저기 분탕 치는 거";
+const TTS_DEVICE: &str = "cpu";
 const MAX_SEGMENT_CHARS: usize = 220;
 
 static TTS_MANAGER: OnceLock<LocalTtsManager> = OnceLock::new();
@@ -206,18 +211,49 @@ impl LocalTtsManager {
             return Ok(());
         }
 
-        let process = Command::new(START_SCRIPT)
+        let port = TTS_PORT.to_string();
+        let log_path = self.cache_dir.join("yuni-tts.log");
+        let stdout = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .with_context(|| format!("open GPT-SoVITS log {}", log_path.display()))?;
+        let stderr = stdout
+            .try_clone()
+            .with_context(|| format!("clone GPT-SoVITS log {}", log_path.display()))?;
+
+        let process = Command::new(CONDA_BIN)
+            .args(["run", "--no-capture-output", "-n", "GPTSoVits"])
+            .args(["python", GPT_SOVITS_API])
+            .args(["-s", SOVITS_MODEL])
+            .args(["-g", GPT_MODEL])
+            .args(["-dr", REF_WAV])
+            .arg("-dt")
+            .arg(REF_TEXT)
+            .args(["-dl", "ko"])
+            .args(["-d", TTS_DEVICE])
+            .args(["-a", TTS_HOST])
+            .args(["-p", port.as_str()])
+            .arg("-fp")
+            .args(["-mt", "wav"])
+            .current_dir(GPT_SOVITS_ROOT)
             .env("HOST", TTS_HOST)
             .env("PORT", TTS_PORT.to_string())
             .env("SOVITS", SOVITS_MODEL)
             .env("GPT", GPT_MODEL)
             .env("REF_WAV", REF_WAV)
             .env("REF_TEXT_PATH", REF_TEXT_PATH)
+            .env("PYTHONUNBUFFERED", "1")
+            .env("PYTHONPATH", GPT_SOVITS_ROOT)
+            .env(
+                "PATH",
+                "/opt/homebrew/bin:/opt/homebrew/Caskroom/miniconda/base/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            )
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
             .spawn()
-            .with_context(|| format!("start GPT-SoVITS script {START_SCRIPT}"))?;
+            .with_context(|| format!("start GPT-SoVITS API via {CONDA_BIN}"))?;
 
         *child = Some(process);
         Ok(())
@@ -359,7 +395,8 @@ fn manager_for_state(state: &AppState) -> &'static LocalTtsManager {
 
 fn validate_runtime_files() -> Result<()> {
     for path in [
-        START_SCRIPT,
+        CONDA_BIN,
+        GPT_SOVITS_API,
         SOVITS_MODEL,
         GPT_MODEL,
         REF_WAV,
@@ -368,6 +405,9 @@ fn validate_runtime_files() -> Result<()> {
         if !FsPath::new(path).is_file() {
             bail!("missing GPT-SoVITS runtime file: {path}");
         }
+    }
+    if !FsPath::new(GPT_SOVITS_ROOT).is_dir() {
+        bail!("missing GPT-SoVITS runtime root: {GPT_SOVITS_ROOT}");
     }
     Ok(())
 }

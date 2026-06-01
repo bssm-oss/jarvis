@@ -177,6 +177,7 @@ default = [
   "channel-wecom",
   "channel-wecom-ws",
   "channel-whatsapp-cloud",
+  "voice-wake",
 ]
 # Channels with optional deps
 channel-email = ["dep:async-imap", "dep:lettre", "dep:mail-parser", "dep:pulldown-cmark"]
