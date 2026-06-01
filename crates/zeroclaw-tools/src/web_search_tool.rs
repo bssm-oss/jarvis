@@ -1,5 +1,6 @@
 use super::web_search_provider_routing::{WebSearchProviderRoute, resolve_web_search_provider};
 use async_trait::async_trait;
+use base64::Engine;
 use regex::Regex;
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -163,8 +164,23 @@ impl WebSearchTool {
     }
 
     async fn search_duckduckgo(&self, query: &str) -> anyhow::Result<String> {
-        self.search_duckduckgo_at("https://html.duckduckgo.com/html/", query)
+        match self
+            .search_duckduckgo_at("https://html.duckduckgo.com/html/", query)
             .await
+        {
+            Ok(result) => Ok(result),
+            Err(err) if err.to_string().contains(DUCKDUCKGO_BLOCK_MESSAGE) => {
+                ::zeroclaw_log::record!(
+                    WARN,
+                    ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note)
+                        .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
+                        .with_attrs(::serde_json::json!({"search_provider": "bing"})),
+                    "web_search: DuckDuckGo blocked request; falling back to Bing HTML search"
+                );
+                self.search_bing(query).await
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Inner DuckDuckGo request implementation, parameterized on the endpoint URL
@@ -251,6 +267,86 @@ impl WebSearchTool {
                     lines.push(format!("   {}", snippet));
                 }
             }
+        }
+
+        Ok(lines.join("\n"))
+    }
+
+    async fn search_bing(&self, query: &str) -> anyhow::Result<String> {
+        self.search_bing_at("https://www.bing.com/search", query)
+            .await
+    }
+
+    async fn search_bing_at(&self, endpoint_url: &str, query: &str) -> anyhow::Result<String> {
+        let encoded_query = urlencoding::encode(query);
+        let search_url = format!("{}?q={}", endpoint_url, encoded_query);
+
+        let builder = reqwest::Client::builder()
+            .timeout(Duration::from_secs(self.timeout_secs))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        let builder =
+            zeroclaw_config::schema::apply_runtime_proxy_to_builder(builder, "tool.web_search");
+        let client = builder.build()?;
+
+        let response = client.get(&search_url).send().await?;
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "{} Bing fallback search failed with status: {}",
+                DUCKDUCKGO_BLOCK_MESSAGE,
+                response.status()
+            );
+        }
+
+        let html = response.text().await?;
+        self.parse_bing_results(&html, query)
+    }
+
+    fn parse_bing_results(&self, html: &str, query: &str) -> anyhow::Result<String> {
+        let block_regex = Regex::new(r#"(?is)<li[^>]*class="[^"]*b_algo[^"]*"[^>]*>(.*?)</li>"#)?;
+        let link_regex = Regex::new(r#"(?is)<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#)?;
+        let snippet_regex =
+            Regex::new(r#"(?is)<div[^>]*class="[^"]*b_caption[^"]*"[^>]*>\s*<p[^>]*>(.*?)</p>"#)?;
+
+        let mut lines = vec![format!(
+            "Search results for: {} (via Bing fallback after DuckDuckGo block)",
+            query
+        )];
+        let mut count = 0;
+
+        for block in block_regex
+            .captures_iter(html)
+            .filter_map(|caps| caps.get(1).map(|m| m.as_str()))
+        {
+            let Some(link_caps) = link_regex.captures(block) else {
+                continue;
+            };
+            let href = link_caps.get(1).map_or("", |m| m.as_str());
+            let title = link_caps.get(2).map_or("", |m| m.as_str());
+            let url = decode_bing_redirect_url(href);
+            let title = clean_search_text(title);
+
+            if title.is_empty() || url.is_empty() {
+                continue;
+            }
+
+            count += 1;
+            lines.push(format!("{}. {}", count, title));
+            lines.push(format!("   {}", url));
+
+            if let Some(snippet_caps) = snippet_regex.captures(block) {
+                let snippet = clean_search_text(snippet_caps.get(1).map_or("", |m| m.as_str()));
+                if !snippet.is_empty() {
+                    lines.push(format!("   {}", snippet));
+                }
+            }
+
+            if count >= self.max_results {
+                break;
+            }
+        }
+
+        if count == 0 {
+            return Ok(format!("No results found for: {}", query));
         }
 
         Ok(lines.join("\n"))
@@ -663,6 +759,40 @@ fn decode_ddg_redirect_url(raw_url: &str) -> String {
     raw_url.to_string()
 }
 
+fn decode_bing_redirect_url(raw_url: &str) -> String {
+    let unescaped = html_entity_decode_basic(raw_url);
+    let raw = unescaped.as_str();
+
+    if let Some(index) = raw.find("u=") {
+        let encoded = &raw[index + 2..];
+        let encoded = encoded.split('&').next().unwrap_or(encoded);
+        if let Ok(decoded_param) = urlencoding::decode(encoded) {
+            let decoded_param = decoded_param.into_owned();
+            let candidate = decoded_param.strip_prefix("a1").unwrap_or(&decoded_param);
+            if let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(candidate)
+                && let Ok(decoded_url) = String::from_utf8(bytes)
+                && decoded_url.starts_with("http")
+            {
+                return decoded_url;
+            }
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(candidate)
+                && let Ok(decoded_url) = String::from_utf8(bytes)
+                && decoded_url.starts_with("http")
+            {
+                return decoded_url;
+            }
+        }
+    }
+
+    if raw.starts_with("http") {
+        raw.to_string()
+    } else if raw.starts_with('/') {
+        format!("https://www.bing.com{raw}")
+    } else {
+        raw.to_string()
+    }
+}
+
 const DUCKDUCKGO_BLOCK_MESSAGE: &str = "DuckDuckGo blocked the automated search request. Try configuring SearXNG, Brave, or Tavily as the web search provider.";
 
 fn duckduckgo_block_message(
@@ -687,6 +817,26 @@ fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
 fn strip_tags(content: &str) -> String {
     let re = Regex::new(r"<[^>]+>").unwrap();
     re.replace_all(content, "").to_string()
+}
+
+fn clean_search_text(content: &str) -> String {
+    html_entity_decode_basic(strip_tags(content).trim())
+        .trim()
+        .to_string()
+}
+
+fn html_entity_decode_basic(s: &str) -> String {
+    s.replace("&nbsp;", " ")
+        .replace("&#160;", " ")
+        .replace("&#32;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&#0183;", "·")
+        .replace("&#183;", "·")
 }
 
 #[async_trait]
@@ -823,6 +973,57 @@ mod tests {
         let result = tool.parse_duckduckgo_results(html, "test").unwrap();
         assert!(result.contains("https://example.com/path?a=1"));
         assert!(!result.contains("rut=test"));
+    }
+
+    #[test]
+    fn test_parse_bing_results_decodes_redirect_url_and_entities() {
+        let tool = WebSearchTool::new("duckduckgo".to_string(), None, 5, 15);
+        let html = r#"
+            <li class="b_algo">
+              <h2><a href="https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9leGFtcGxlLmNvbS9wYXRoP2E9MQ&amp;ntb=1">Beef &amp; Price</a></h2>
+              <div class="b_caption"><p>100g&#0183;&#32;lowest &amp; fresh</p></div>
+            </li>
+        "#;
+
+        let result = tool.parse_bing_results(html, "소고기 최저가").unwrap();
+
+        assert!(result.contains("via Bing fallback"));
+        assert!(result.contains("Beef & Price"));
+        assert!(result.contains("https://example.com/path?a=1"));
+        assert!(result.contains("100g· lowest & fresh"));
+    }
+
+    #[tokio::test]
+    async fn test_bing_fallback_request_parses_results() {
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/search"))
+            .and(query_param("q", "소고기 최저가"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"
+                <ol>
+                  <li class="b_algo">
+                    <h2><a href="https://example.com/beef">소고기 최저가</a></h2>
+                    <div class="b_caption"><p>가격 비교 결과</p></div>
+                  </li>
+                </ol>
+                "#,
+            ))
+            .mount(&server)
+            .await;
+
+        let tool = WebSearchTool::new("duckduckgo".to_string(), None, 5, 15);
+        let result = tool
+            .search_bing_at(&format!("{}/search", server.uri()), "소고기 최저가")
+            .await
+            .expect("Bing fallback HTML should parse");
+
+        assert!(result.contains("소고기 최저가"));
+        assert!(result.contains("https://example.com/beef"));
+        assert!(result.contains("가격 비교 결과"));
     }
 
     #[test]

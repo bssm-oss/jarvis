@@ -149,7 +149,10 @@ impl PromptSection for ToolHonestySection {
             "## CRITICAL: Tool Honesty\n\n\
              - NEVER fabricate, invent, or guess tool results. If a tool returns empty results, say \"No results found.\"\n\
              - If a tool call fails, report the error — never make up data to fill the gap.\n\
-             - When unsure whether a tool call succeeded, ask the user rather than guessing."
+             - When unsure whether a tool call succeeded, ask the user rather than guessing.\n\
+             - For simple current-information requests, do not keep rewriting web searches. \
+               Use at most three web_search_tool calls, then answer from the gathered results \
+               and clearly say when an exact answer was not available."
                 .into(),
         )
     }

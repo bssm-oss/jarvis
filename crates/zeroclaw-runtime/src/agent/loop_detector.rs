@@ -7,6 +7,7 @@
 //! 2. **Ping-pong** — two tools alternating (A->B->A->B) for 4+ cycles.
 //! 3. **No progress** — same tool called 5+ times with different args but
 //!    identical result hash each time.
+//! 4. **Search churn** — web search called too many times consecutively.
 //!
 //! Detection triggers escalating responses: `Warning` -> `Block` -> `Break`.
 
@@ -153,6 +154,9 @@ impl LoopDetector {
         if let Some(result) = self.detect_ping_pong() {
             return result;
         }
+        if let Some(result) = self.detect_search_churn() {
+            return result;
+        }
         if let Some(result) = self.detect_no_progress() {
             return result;
         }
@@ -262,6 +266,51 @@ impl LoopDetector {
                  Consider a different strategy.",
                 a_name, b_name, cycles
             )))
+        }
+    }
+
+    /// Pattern 4: `web_search_tool` called too many times in a row.
+    ///
+    /// Search results are intentionally time- and query-dependent, so identical
+    /// result hashing can miss this loop shape. This guard nudges the model to
+    /// answer from gathered evidence instead of rewriting the same search.
+    fn detect_search_churn(&self) -> Option<LoopDetectionResult> {
+        const MIN_CALLS: usize = 6;
+        const TOOL_NAME: &str = "web_search_tool";
+
+        if self.window.len() < MIN_CALLS {
+            return None;
+        }
+
+        let last = self.window.back()?;
+        if last.name != TOOL_NAME {
+            return None;
+        }
+
+        let consecutive = self
+            .window
+            .iter()
+            .rev()
+            .take_while(|r| r.name == TOOL_NAME)
+            .count();
+
+        if consecutive >= MIN_CALLS + 2 {
+            Some(LoopDetectionResult::Break(format!(
+                "Circuit breaker: {TOOL_NAME} called {consecutive} times consecutively. \
+                 Stop searching and answer from the gathered evidence."
+            )))
+        } else if consecutive > MIN_CALLS {
+            Some(LoopDetectionResult::Block(format!(
+                "Blocked: {TOOL_NAME} called {consecutive} times consecutively. \
+                 Use the gathered results instead of searching again."
+            )))
+        } else if consecutive >= MIN_CALLS {
+            Some(LoopDetectionResult::Warning(format!(
+                "Warning: {TOOL_NAME} has been called {consecutive} times consecutively. \
+                 Stop searching unless the next query is materially different, and answer from the gathered evidence."
+            )))
+        } else {
+            None
         }
     }
 
@@ -474,6 +523,71 @@ mod tests {
                 !msg.contains("alternating"),
                 "should be exact-repeat, not ping-pong"
             );
+        }
+    }
+
+    // ── Search-churn tests ──────────────────────────────────────
+
+    #[test]
+    fn search_churn_warns_for_many_consecutive_web_searches() {
+        let mut det = LoopDetector::new(default_config());
+
+        for i in 0..6 {
+            let result = det.record(
+                "web_search_tool",
+                &json!({"query": format!("소고기 최저가 {i}")}),
+                &format!("result {i}"),
+            );
+            if i < 5 {
+                assert_eq!(result, LoopDetectionResult::Ok, "iteration {i}");
+            } else {
+                match result {
+                    LoopDetectionResult::Warning(msg) => {
+                        assert!(msg.contains("web_search_tool"));
+                        assert!(msg.contains("gathered evidence"));
+                    }
+                    other => panic!("expected Warning, got {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn search_churn_breaks_before_unbounded_web_search_loop() {
+        let mut det = LoopDetector::new(default_config());
+
+        for i in 0..7 {
+            det.record(
+                "web_search_tool",
+                &json!({"query": format!("variant {i}")}),
+                &format!("result {i}"),
+            );
+        }
+
+        match det.record(
+            "web_search_tool",
+            &json!({"query": "variant 7"}),
+            "result 7",
+        ) {
+            LoopDetectionResult::Break(msg) => {
+                assert!(msg.contains("Circuit breaker"));
+                assert!(msg.contains("web_search_tool"));
+            }
+            other => panic!("expected Break, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_churn_is_specific_to_web_search_tool() {
+        let mut det = LoopDetector::new(default_config());
+
+        for i in 0..8 {
+            let result = det.record(
+                "calculator",
+                &json!({"expr": format!("{i}+1")}),
+                &format!("result {i}"),
+            );
+            assert_eq!(result, LoopDetectionResult::Ok, "iteration {i}");
         }
     }
 
