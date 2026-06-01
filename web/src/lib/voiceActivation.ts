@@ -3,6 +3,8 @@ import type { SSEEvent } from '../types/api';
 
 export const VOICE_ACTIVATION_EVENT = 'zeroclaw-voice-activation';
 export const DEFAULT_VOICE_ACK = '네 주인님 무엇을 도와드릴까요?';
+const VOICE_ACTIVATION_SIGNAL_KEY = 'zeroclaw_voice_activation_signal';
+const VOICE_ACTIVATION_SIGNAL_MAX_AGE_MS = 60_000;
 
 export interface VoiceActivationSignal {
   phase: string;
@@ -94,6 +96,40 @@ export async function fetchVoiceActivationSignalsSince(
     .filter((item): item is VoiceActivationSignalEnvelope => Boolean(item));
 }
 
+export function saveVoiceActivationSignal(signal: VoiceActivationSignal) {
+  try {
+    sessionStorage.setItem(VOICE_ACTIVATION_SIGNAL_KEY, JSON.stringify(signal));
+  } catch {
+    // Session storage is best-effort; live events still update the page.
+  }
+}
+
+export function loadRecentVoiceActivationSignal(now = Date.now()): VoiceActivationSignal | null {
+  try {
+    const raw = sessionStorage.getItem(VOICE_ACTIVATION_SIGNAL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<VoiceActivationSignal>;
+    if (
+      typeof parsed.phase !== 'string' ||
+      typeof parsed.ackText !== 'string' ||
+      typeof parsed.createdAt !== 'number' ||
+      now - parsed.createdAt > VOICE_ACTIVATION_SIGNAL_MAX_AGE_MS
+    ) {
+      return null;
+    }
+
+    return {
+      phase: parsed.phase,
+      ackText: parsed.ackText,
+      amplitude: typeof parsed.amplitude === 'number' ? parsed.amplitude : null,
+      createdAt: parsed.createdAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function dispatchVoiceActivationSignal(signal: VoiceActivationSignal) {
+  saveVoiceActivationSignal(signal);
   window.dispatchEvent(new CustomEvent(VOICE_ACTIVATION_EVENT, { detail: signal }));
 }

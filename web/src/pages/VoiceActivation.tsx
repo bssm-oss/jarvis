@@ -5,6 +5,9 @@ import { useLocalTts } from '../hooks/useLocalTts';
 import {
   DEFAULT_VOICE_ACK,
   VOICE_ACTIVATION_EVENT,
+  fetchVoiceActivationSignalsSince,
+  loadRecentVoiceActivationSignal,
+  saveVoiceActivationSignal,
   signalFromSseEvent,
   type VoiceActivationSignal,
 } from '../lib/voiceActivation';
@@ -90,28 +93,76 @@ function labelForPhase(signal: VoiceActivationSignal | null): string {
 
 export default function VoiceActivation() {
   const { events } = useSSE({ filterTypes: ['message'], maxEvents: 40 });
-  const [signal, setSignal] = useState<VoiceActivationSignal | null>(() => ({
-    phase: 'idle',
-    ackText: sessionStorage.getItem('zeroclaw_voice_ack') ?? DEFAULT_VOICE_ACK,
-    amplitude: null,
-    createdAt: Date.now(),
-  }));
+  const [signal, setSignal] = useState<VoiceActivationSignal | null>(() => (
+    loadRecentVoiceActivationSignal() ?? {
+      phase: 'idle',
+      ackText: sessionStorage.getItem('zeroclaw_voice_ack') ?? DEFAULT_VOICE_ACK,
+      amplitude: null,
+      createdAt: Date.now(),
+    }
+  ));
   const spokenRef = useRef('');
+  const handledRef = useRef(new Set<string>());
+  const lastPollMsRef = useRef(
+    signal?.phase !== 'idle' ? signal?.createdAt ?? Date.now() : Date.now() - 15_000,
+  );
   const localTts = useLocalTts(true);
   const micLevel = useMicrophoneLevel(true);
 
+  const applySignal = (next: VoiceActivationSignal, key: string) => {
+    if (handledRef.current.has(key)) return;
+    handledRef.current.add(key);
+    if (handledRef.current.size > 200) {
+      handledRef.current = new Set(Array.from(handledRef.current).slice(-100));
+    }
+    lastPollMsRef.current = Math.max(lastPollMsRef.current, next.createdAt);
+    saveVoiceActivationSignal(next);
+    setSignal(next);
+  };
+
   useEffect(() => {
     const latest = signalFromSseEvent(events[events.length - 1]);
-    if (latest) setSignal(latest);
+    if (latest) applySignal(latest, `sse:${latest.createdAt}:${latest.phase}`);
   }, [events]);
 
   useEffect(() => {
     const onActivation = (event: Event) => {
       const custom = event as CustomEvent<VoiceActivationSignal>;
-      if (custom.detail) setSignal(custom.detail);
+      if (custom.detail) {
+        applySignal(custom.detail, `event:${custom.detail.createdAt}:${custom.detail.phase}`);
+      }
     };
     window.addEventListener(VOICE_ACTIVATION_EVENT, onActivation);
     return () => window.removeEventListener(VOICE_ACTIVATION_EVENT, onActivation);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const envelopes = await fetchVoiceActivationSignalsSince(lastPollMsRef.current);
+        if (!cancelled) {
+          for (const envelope of envelopes) {
+            applySignal(envelope.signal, `log:${envelope.key}`);
+          }
+        }
+      } catch {
+        // The overlay is still usable from live SSE and CustomEvent updates.
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => void poll(), 750);
+        }
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
