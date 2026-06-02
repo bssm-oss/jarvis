@@ -121,9 +121,14 @@ pub fn run() {
             capabilities::applescript::run_applescript,
         ])
         .setup(move |app| {
-            // Set macOS dock icon (needed for dev builds without .app bundle).
+            // Run as a menu bar/accessory app on macOS. The assistant can still
+            // show its window on demand, but it should not require a Dock slot.
             #[cfg(target_os = "macos")]
-            set_dock_icon();
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                app.set_dock_visibility(false);
+                set_dock_icon();
+            }
 
             // Set up the system tray.
             let _ = tray::setup_tray(app);
@@ -157,6 +162,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if let RunEvent::ExitRequested {
+                code: None, api, ..
+            } = event
+            {
+                api.prevent_exit();
+                return;
+            }
+
             // Closing the window should keep the assistant available from the tray
             // and voice activation, but explicit app quit requests must still exit.
             if let RunEvent::WindowEvent {
