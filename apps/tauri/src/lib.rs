@@ -14,7 +14,7 @@ pub mod windows;
 use commands::onboarding::read_onboarding_complete;
 use gateway_client::GatewayClient;
 use state::shared_state;
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 /// Attempt to auto-pair with the gateway so the WebView has a valid token
 /// before the React frontend mounts. Runs on localhost so the admin endpoints
@@ -156,11 +156,19 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
-            // Keep the app running in the background when all windows are closed.
-            // This is the standard pattern for menu bar / tray apps.
-            if let RunEvent::ExitRequested { api, .. } = event {
-                api.prevent_exit();
+        .run(|app, event| {
+            // Closing the window should keep the assistant available from the tray
+            // and voice activation, but explicit app quit requests must still exit.
+            if let RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::CloseRequested { api, .. },
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.hide();
+                }
+                api.prevent_close();
             }
         });
 }
