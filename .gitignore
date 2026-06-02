@@ -23,6 +23,8 @@ web/src/lib/api-generated.ts
 *.db-journal
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite3
 .DS_Store
 ._*
 .wt-pr37/
@@ -32,6 +34,12 @@ docker-compose.override.yml
 
 # Environment files (may contain secrets)
 .env
+.env.*
+!.env.example
+!.envrc
+.envrc.local
+*.local.env
+*.secret.env
 
 # Python virtual environments
 
@@ -41,16 +49,66 @@ venv/
 # ESP32 build cache (esp-idf-sys managed)
 
 .embuild/
-.env.local
-.env.*.local
 
 # Secret keys and credentials
 .secret_key
+*.secret
+*.secrets
+*.token
+*.token.json
+*.credentials
+*.credentials.json
+*.local.json
+settings.local.json
+config.local.toml
+*.local.toml
+*.secret.toml
+auth.json
+secrets.json
+private.json
 *.key
 *.pem
+*.p8
+*.p12
+*.cer
+*.der
+*.crt
+*.csr
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
 credentials.json
+google-services.json
+GoogleService-Info.plist
 .worktrees/
 .zeroclaw/*
+.zeroclaw/
+.omx/
+.codex/
+.deps/
+
+# Local launch agents and machine-specific app state
+ai.zeroclaw.*.plist
+*.launchagent.plist
+Library/
+LaunchAgents/
+
+# Local model and voice assets. These can contain trained voice data,
+# reference audio, or large proprietary/local-only weights.
+GPT-SoVITS/
+SoVITS_weights*/
+GPT_weights*/
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.wav
+*.m4a
+*.mp3
+*.webm
+!tests/fixtures/**
 
 # Claude Code project settings (machine-specific directory config)
 .claude/settings.json
@@ -85,6 +143,19 @@ playground/
 
 # Temporary rustc output
 rust_out
+
+# Local proof/demo captures. Keep them on disk, but do not publish personal
+# screen recordings, screenshots, or generated TTS proof bundles by accident.
+output/
+jarvis-live2d-*.png
+jarvis-live2d-*.mp4
+jarvis-tts-*.png
+jarvis-tts-*.mp4
+jarvis-tts-*.webm
+jarvis-tts-*.json
+runtime-trace*.jsonl
+*.log
+*.err
 
 # Auto-generated Tauri schemas
 apps/tauri/gen/schemas/
