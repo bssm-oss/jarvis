@@ -46,6 +46,31 @@ impl GatewayClient {
         }
     }
 
+    pub async fn get_voice_activation_logs(&self, limit: usize) -> Result<Vec<serde_json::Value>> {
+        let mut req = self
+            .client
+            .get(format!("{}/api/logs", self.base_url))
+            .query(&[
+                ("q", "voice_activation".to_string()),
+                ("limit", limit.to_string()),
+            ]);
+        if let Some(auth) = self.auth_header() {
+            req = req.header("Authorization", auth);
+        }
+
+        let resp = req.send().await.context("voice activation logs failed")?;
+        if !resp.status().is_success() {
+            anyhow::bail!("voice activation logs returned {}", resp.status());
+        }
+
+        let body: serde_json::Value = resp.json().await?;
+        Ok(body
+            .get("events")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default())
+    }
+
     pub async fn get_devices(&self) -> Result<serde_json::Value> {
         let mut req = self.client.get(format!("{}/api/devices", self.base_url));
         if let Some(auth) = self.auth_header() {

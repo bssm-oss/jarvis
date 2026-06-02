@@ -8,6 +8,7 @@ pub mod linux;
 pub mod macos;
 pub mod state;
 pub mod tray;
+pub mod voice_activation;
 pub mod windows;
 
 use commands::onboarding::read_onboarding_complete;
@@ -149,6 +150,7 @@ pub fn run() {
 
             // Start background health polling.
             health::spawn_health_poller(app.handle().clone(), shared.clone());
+            voice_activation::spawn_voice_activation_poller(app.handle().clone(), shared.clone());
 
             Ok(())
         })
