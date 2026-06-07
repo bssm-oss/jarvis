@@ -472,8 +472,82 @@ impl Channel for VoiceWakeChannel {
                     let since_voice = now.duration_since(last_voice_at);
                     let since_start = now.duration_since(capture_start);
 
+                    let should_finish_wake_capture = should_finish_wake_capture(
+                        triggered_has_voice,
+                        since_voice,
+                        since_start,
+                        silence_timeout,
+                        max_capture,
+                    );
+
+                    // After the clap gate, do not send pure silence to Whisper.
+                    // The user may need a moment to say the wake name after the
+                    // second clap, and transcribing silence made the desktop feel
+                    // like it ignored the gesture.
+                    if should_finish_wake_capture && !triggered_has_voice {
+                        ::zeroclaw_log::record!(
+                            INFO,
+                            ::zeroclaw_log::Event::new(
+                                module_path!(),
+                                ::zeroclaw_log::Action::Note
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "voice_activation": "gesture",
+                                "phase": "wake_name_timeout_no_voice",
+                                "wake_word": wake_word.as_str(),
+                            })),
+                            "VoiceWake: wake-name window closed without voice"
+                        );
+                        state = WakeState::Listening;
+                        clap_gate_armed = false;
+                        triggered_has_voice = false;
+                        capture_has_voice = false;
+                        capture_buf.clear();
+                        continue;
+                    }
+
+                    // In the local Jarvis flow, the double-clap gate is the
+                    // intentional gesture. Once speech follows that gesture,
+                    // activate immediately instead of blocking the UI on a
+                    // wake-name transcription pass.
+                    if should_finish_wake_capture
+                        && should_activate_clap_gated_voice_without_transcript(
+                            clap_gate_armed,
+                            triggered_has_voice,
+                        )
+                    {
+                        ::zeroclaw_log::record!(
+                            INFO,
+                            ::zeroclaw_log::Event::new(
+                                module_path!(),
+                                ::zeroclaw_log::Action::Note
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "text": "[voice after clap]",
+                                "voice_activation": "activated",
+                                "phase": "wake_confirmed",
+                                "wake_word": wake_word.as_str(),
+                                "wake_match": "clap_voice_energy_fallback",
+                                "ack_text": config.activation_ack_text.as_str(),
+                                "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
+                                "energy": energy,
+                            })),
+                            "VoiceWake: clap-gated voice detected — capturing utterance"
+                        );
+                        let capture_ready_at = Instant::now() + post_wake_capture_delay;
+                        state = WakeState::Capturing;
+                        clap_gate_armed = false;
+                        triggered_has_voice = false;
+                        capture_has_voice = false;
+                        capture_buf.clear();
+                        capture_not_before = capture_ready_at;
+                        last_voice_at = capture_ready_at;
+                        capture_start = capture_ready_at;
+                        continue;
+                    }
+
                     // After enough silence or max time, transcribe to check for wake word.
-                    if since_voice >= silence_timeout || since_start >= max_capture {
+                    if should_finish_wake_capture {
                         ::zeroclaw_log::record!(
                             INFO,
                             ::zeroclaw_log::Event::new(
@@ -763,6 +837,23 @@ fn should_finish_utterance_capture(
     (capture_has_voice && since_voice >= silence_timeout) || since_start >= max_capture
 }
 
+fn should_finish_wake_capture(
+    triggered_has_voice: bool,
+    since_voice: Duration,
+    since_start: Duration,
+    silence_timeout: Duration,
+    max_capture: Duration,
+) -> bool {
+    (triggered_has_voice && since_voice >= silence_timeout) || since_start >= max_capture
+}
+
+fn should_activate_clap_gated_voice_without_transcript(
+    clap_gate_armed: bool,
+    triggered_has_voice: bool,
+) -> bool {
+    clap_gate_armed && triggered_has_voice
+}
+
 fn normalize_voice_utterance_text(text: &str) -> String {
     text.trim()
         .replace("최적과", "최저가")
@@ -977,6 +1068,52 @@ mod tests {
             Duration::from_secs(9),
             silence_timeout,
             max_capture,
+        ));
+    }
+
+    #[test]
+    fn wake_capture_waits_for_voice_after_clap_gate() {
+        let silence_timeout = Duration::from_millis(1200);
+        let max_capture = Duration::from_secs(8);
+
+        assert!(
+            !should_finish_wake_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "silence after the second clap should leave time to say the wake name"
+        );
+
+        assert!(should_finish_wake_capture(
+            true,
+            Duration::from_millis(1500),
+            Duration::from_millis(2500),
+            silence_timeout,
+            max_capture,
+        ));
+
+        assert!(should_finish_wake_capture(
+            false,
+            Duration::from_secs(9),
+            Duration::from_secs(9),
+            silence_timeout,
+            max_capture,
+        ));
+    }
+
+    #[test]
+    fn clap_gated_voice_can_activate_without_waiting_for_wake_transcript() {
+        assert!(should_activate_clap_gated_voice_without_transcript(
+            true, true
+        ));
+        assert!(!should_activate_clap_gated_voice_without_transcript(
+            true, false
+        ));
+        assert!(!should_activate_clap_gated_voice_without_transcript(
+            false, true
         ));
     }
 
