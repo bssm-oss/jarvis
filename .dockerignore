@@ -1,0 +1,148 @@
+# Git history (may contain old secrets)
+.git
+.gitignore
+.githooks
+
+# Rust build artifacts (can be multiple GB)
+target
+
+# Web build artifacts and local dependencies
+web/node_modules
+web/dist
+
+# Documentation and examples (not needed for runtime)
+docs
+examples
+tests
+
+# Markdown files (README, CHANGELOG, etc.)
+*.md
+
+# Images (unnecessary for build)
+*.png
+*.svg
+*.jpg
+*.jpeg
+*.gif
+
+# SQLite databases (conversation history, cron jobs)
+*.db
+*.db-journal
+
+# macOS artifacts
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# CI/CD configs (not needed in image)
+.github
+
+# Cargo deny config (lint tool, not runtime)
+deny.toml
+
+# License file (not needed for runtime)
+LICENSE
+
+# Temporary files
+.tmp_*
+*.tmp
+*.bak
+*.swp
+*~
+
+# IDE and editor configs
+.idea
+.vscode
+*.iml
+
+# Windsurf workflows
+.windsurf
+
+# Environment files (may contain secrets)
+.env
+.env.*
+!.env.example
+.envrc.local
+
+# Local auth, runtime state, and machine-specific config
+.secrets
+.secret_key
+*.secret
+*.secrets
+*.token
+*.token.json
+*.credentials
+*.credentials.json
+auth.json
+credentials.json
+secrets.json
+private.json
+*.local.json
+settings.local.json
+config.local.toml
+*.local.toml
+*.secret.toml
+.zeroclaw
+.omx
+.codex
+.deps
+ai.zeroclaw.*.plist
+*.launchagent.plist
+Library
+LaunchAgents
+
+# Signing certificates, mobile provisioning, and platform credentials
+*.key
+*.pem
+*.p8
+*.p12
+*.cer
+*.der
+*.crt
+*.csr
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+google-services.json
+GoogleService-Info.plist
+
+# Local model, voice, and generated proof artifacts
+GPT-SoVITS
+SoVITS_weights*
+GPT_weights*
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.wav
+*.m4a
+*.mp3
+*.mp4
+*.webm
+output
+jarvis-live2d-*
+jarvis-tts-*
+runtime-trace*.jsonl
+*.log
+*.err
+
+# Coverage and profiling
+*.profraw
+*.profdata
+coverage
+lcov.info
+
+# Application and script directories (not needed for Docker runtime)
+# Note: apps/tauri/Cargo.toml is required for workspace resolution in Docker build.
+apps/*
+!apps/tauri/
+apps/tauri/src/
+apps/tauri/icons/
+apps/tauri/gen/
+apps/tauri/capabilities/
+apps/tauri/tauri.conf.json
+apps/tauri/build.rs
+!apps/tauri/Cargo.toml
+scripts/
