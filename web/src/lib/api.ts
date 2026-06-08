@@ -1078,6 +1078,26 @@ export function reloadDaemon(): Promise<AdminResponse> {
   return apiFetch<AdminResponse>('/admin/reload', { method: 'POST' });
 }
 
+// ── Jarvis local control ────────────────────────────────────────
+
+export interface JarvisTuning {
+  energy_threshold: number;
+  clap_energy_threshold: number;
+  clap_window_ms: number;
+  clap_cooldown_ms: number;
+}
+
+export function getJarvisTuning(): Promise<JarvisTuning> {
+  return apiFetch<JarvisTuning>('/api/jarvis/tuning');
+}
+
+export function putJarvisTuning(tuning: JarvisTuning): Promise<JarvisTuning> {
+  return apiFetch<JarvisTuning>('/api/jarvis/tuning', {
+    method: 'PUT',
+    body: JSON.stringify(tuning),
+  });
+}
+
 
 // ---------------------------------------------------------------------------
 // Tools

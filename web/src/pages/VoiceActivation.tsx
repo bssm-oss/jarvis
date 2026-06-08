@@ -84,11 +84,37 @@ function useMicrophoneLevel(active: boolean): number {
 function labelForPhase(signal: VoiceActivationSignal | null): string {
   if (!signal) return 'JARVIS';
   if (signal.phase === 'wake_confirmed') return signal.ackText;
+  if (signal.phase === 'utterance_transcribing') return '명령을 듣고 있습니다';
   if (signal.phase === 'utterance_dispatched') return '처리 중';
   if (signal.phase === 'double_clap_detected' || signal.phase === 'wake_name_audio_started') {
-    return '자비스';
+    return '자비스 기동 중';
+  }
+  if (signal.phase === 'wake_name_timeout' || signal.phase === 'wake_name_timeout_no_voice') {
+    return '박수는 감지됐지만 음성이 없습니다';
+  }
+  if (signal.phase === 'no_wake_word') {
+    return '호명 인식이 맞지 않습니다';
   }
   return '대기 중';
+}
+
+function statusForPhase(signal: VoiceActivationSignal | null, speaking: boolean) {
+  if (speaking) return { label: '말하는 중', tone: 'speaking' };
+  switch (signal?.phase) {
+    case 'double_clap_detected':
+      return { label: '자비스 확인', tone: 'armed' };
+    case 'wake_confirmed':
+      return { label: '듣는 중', tone: 'listening' };
+    case 'utterance_transcribing':
+    case 'utterance_dispatched':
+      return { label: '처리 중', tone: 'processing' };
+    case 'wake_name_timeout':
+    case 'wake_name_timeout_no_voice':
+    case 'no_wake_word':
+      return { label: '확인 필요', tone: 'error' };
+    default:
+      return { label: '대기 중', tone: 'idle' };
+  }
 }
 
 export default function VoiceActivation() {
@@ -180,15 +206,17 @@ export default function VoiceActivation() {
     const baseline = signal?.phase === 'wake_confirmed' || localTts.speaking ? 0.18 : 0.08;
     return Math.max(baseline, micLevel, eventLevel);
   }, [localTts.speaking, micLevel, signal]);
+  const status = statusForPhase(signal, localTts.speaking);
 
   const style = {
     '--voice-level': level.toFixed(3),
   } as CSSProperties;
 
   return (
-    <main className="voice-activation-screen" style={style}>
+    <main className="voice-activation-screen" style={style} data-voice-tone={status.tone}>
       <div className="voice-activation-frame">
         <div className="voice-activation-kicker">JARVIS</div>
+        <div className="voice-activation-state" data-tone={status.tone}>{status.label}</div>
         <Live2DJarvisAvatar
           level={level}
           phase={signal?.phase ?? 'idle'}

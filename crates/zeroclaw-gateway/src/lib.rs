@@ -16,6 +16,7 @@ pub mod acp;
 pub mod api;
 pub mod api_browse;
 pub mod api_config;
+pub mod api_jarvis;
 pub mod api_logs;
 pub mod api_onboard;
 pub mod api_pairing;
@@ -1332,6 +1333,10 @@ pub async fn run_gateway(
             post(api_config::handle_map_key).delete(api_config::handle_delete_map_key),
         )
         .route("/api/config/rename-map-key", post(api_config::handle_rename_map_key))
+        .route(
+            "/api/jarvis/tuning",
+            get(api_jarvis::handle_tuning_get).put(api_jarvis::handle_tuning_put),
+        )
         .route("/api/onboard/catalog", get(api_onboard::handle_catalog))
         .route(
             "/api/onboard/catalog/models",

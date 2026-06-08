@@ -11,6 +11,7 @@ import {
   Dashboard,
   Doctor,
   Integrations,
+  JarvisControl,
   Logs,
   Onboard,
   Pairing,
@@ -42,6 +43,7 @@ export const Router = () => (
         <Route path="/tools" element={<Tools />} />
         <Route path="/cron" element={<Cron />} />
         <Route path="/integrations" element={<Integrations />} />
+        <Route path="/jarvis" element={<JarvisControl />} />
         <Route path="/memory" element={<Navigate to="/?tab=memories" replace />} />
         <Route path="/config" element={<Config />} />
         <Route path="/config/:section" element={<Config />} />

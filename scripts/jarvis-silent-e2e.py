@@ -175,7 +175,7 @@ def run_voice_flow_test(skip: bool) -> str:
         "test",
         "-p",
         "zeroclaw-channels",
-        "jarvis_double_clap_wake_and_price_command_flow_dispatches_task",
+        "jarvis_double_clap_immediately_activates_and_dispatches_task",
         "--features",
         "voice-wake",
     ]

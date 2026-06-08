@@ -357,6 +357,7 @@ impl Channel for VoiceWakeChannel {
                                 );
                             }
                             ClapGateEvent::Complete => {
+                                let capture_ready_at = Instant::now() + post_wake_capture_delay;
                                 ::zeroclaw_log::record!(
                                     INFO,
                                     ::zeroclaw_log::Event::new(
@@ -370,14 +371,34 @@ impl Channel for VoiceWakeChannel {
                                             "energy": energy,
                                         })
                                     ),
-                                    "VoiceWake: clap gesture complete — waiting for wake word"
+                                    "VoiceWake: clap gesture complete — activating Jarvis"
                                 );
-                                state = WakeState::Triggered;
-                                clap_gate_armed = true;
+                                ::zeroclaw_log::record!(
+                                    INFO,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(::serde_json::json!({
+                                        "text": "[double clap]",
+                                        "voice_activation": "activated",
+                                        "phase": "wake_confirmed",
+                                        "wake_word": wake_word.as_str(),
+                                        "wake_match": "double_clap",
+                                        "ack_text": config.activation_ack_text.as_str(),
+                                        "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
+                                        "energy": energy,
+                                    })),
+                                    "VoiceWake: double clap activated Jarvis — capturing utterance"
+                                );
+                                state = WakeState::Capturing;
+                                clap_gate_armed = false;
                                 triggered_has_voice = false;
+                                capture_has_voice = false;
                                 capture_buf.clear();
-                                last_voice_at = Instant::now();
-                                capture_start = Instant::now();
+                                capture_not_before = capture_ready_at;
+                                last_voice_at = capture_ready_at;
+                                capture_start = capture_ready_at;
                             }
                             ClapGateEvent::Expired => {
                                 ::zeroclaw_log::record!(
@@ -1146,7 +1167,7 @@ mod tests {
     }
 
     #[test]
-    fn jarvis_double_clap_wake_and_price_command_flow_dispatches_task() {
+    fn jarvis_double_clap_immediately_activates_and_dispatches_task() {
         let config = VoiceWakeConfig {
             wake_word: "jarvis".into(),
             clap_gate_enabled: true,
@@ -1178,10 +1199,6 @@ mod tests {
             ClapGateEvent::Complete,
             "second clap inside the configured window should complete the gate"
         );
-
-        let wake_text = "Jarvis";
-        let lower = wake_text.to_lowercase();
-        assert!(wake_word_matches(&lower, &config.wake_word));
 
         let silence_timeout = Duration::from_millis(u64::from(config.silence_timeout_ms));
         let max_capture = Duration::from_secs(u64::from(config.max_capture_secs));

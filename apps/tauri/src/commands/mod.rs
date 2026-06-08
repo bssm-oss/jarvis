@@ -5,4 +5,5 @@ pub mod gateway;
 pub mod onboarding;
 pub mod pairing;
 pub mod permissions;
+pub mod system;
 pub mod window;
