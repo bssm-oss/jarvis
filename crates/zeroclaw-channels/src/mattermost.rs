@@ -2250,6 +2250,7 @@ mod tests {
                 local_whisper: Some(zeroclaw_config::schema::LocalWhisperConfig {
                     url: whisper_url,
                     bearer_token: Some("test_token".to_string()),
+                    language: None,
                     max_audio_bytes: 25_000_000,
                     timeout_secs: 300,
                 }),
@@ -2304,6 +2305,7 @@ mod tests {
                 local_whisper: Some(zeroclaw_config::schema::LocalWhisperConfig {
                     url: mock_server.uri(),
                     bearer_token: Some("test_token".to_string()),
+                    language: None,
                     max_audio_bytes: 25_000_000,
                     timeout_secs: 300,
                 }),

@@ -8,12 +8,13 @@ pub mod linux;
 pub mod macos;
 pub mod state;
 pub mod tray;
+pub mod voice_activation;
 pub mod windows;
 
 use commands::onboarding::read_onboarding_complete;
 use gateway_client::GatewayClient;
 use state::shared_state;
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 /// Attempt to auto-pair with the gateway so the WebView has a valid token
 /// before the React frontend mounts. Runs on localhost so the admin endpoints
@@ -107,10 +108,14 @@ pub fn run() {
             commands::pairing::initiate_pairing,
             commands::pairing::get_devices,
             commands::agent::send_message,
+            commands::audio::play_local_tts_audio,
             commands::permissions::get_permissions_status,
             commands::permissions::get_runtime_platform,
             commands::permissions::request_permission,
             commands::permissions::open_privacy_settings,
+            commands::system::get_output_volume,
+            commands::system::get_launch_agent_statuses,
+            commands::window::show_voice_activation,
             commands::onboarding::get_onboarding_state,
             commands::onboarding::complete_onboarding,
             commands::onboarding::reset_onboarding,
@@ -118,9 +123,15 @@ pub fn run() {
             capabilities::applescript::run_applescript,
         ])
         .setup(move |app| {
-            // Set macOS dock icon (needed for dev builds without .app bundle).
+            // Run as a menu bar/accessory app on macOS. The assistant can still
+            // show its window on demand, but it should not require a Dock slot.
             #[cfg(target_os = "macos")]
-            set_dock_icon();
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                app.set_dock_visibility(false);
+                set_dock_icon();
+                macos::launch_agents::start_background_services();
+            }
 
             // Set up the system tray.
             let _ = tray::setup_tray(app);
@@ -147,16 +158,33 @@ pub fn run() {
 
             // Start background health polling.
             health::spawn_health_poller(app.handle().clone(), shared.clone());
+            voice_activation::spawn_voice_activation_poller(app.handle().clone(), shared.clone());
 
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
-            // Keep the app running in the background when all windows are closed.
-            // This is the standard pattern for menu bar / tray apps.
-            if let RunEvent::ExitRequested { api, .. } = event {
+        .run(|app, event| {
+            if let RunEvent::ExitRequested {
+                code: None, api, ..
+            } = event
+            {
                 api.prevent_exit();
+                return;
+            }
+
+            // Closing the window should keep the assistant available from the tray
+            // and voice activation, but explicit app quit requests must still exit.
+            if let RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::CloseRequested { api, .. },
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.hide();
+                }
+                api.prevent_close();
             }
         });
 }

@@ -16,6 +16,7 @@ pub mod acp;
 pub mod api;
 pub mod api_browse;
 pub mod api_config;
+pub mod api_jarvis;
 pub mod api_logs;
 pub mod api_onboard;
 pub mod api_pairing;
@@ -23,6 +24,7 @@ pub mod api_personality;
 #[cfg(feature = "plugins-wasm")]
 pub mod api_plugins;
 pub mod api_skills;
+pub mod api_tts;
 #[cfg(feature = "webauthn")]
 pub mod api_webauthn;
 pub mod auth_rate_limit;
@@ -1331,6 +1333,10 @@ pub async fn run_gateway(
             post(api_config::handle_map_key).delete(api_config::handle_delete_map_key),
         )
         .route("/api/config/rename-map-key", post(api_config::handle_rename_map_key))
+        .route(
+            "/api/jarvis/tuning",
+            get(api_jarvis::handle_tuning_get).put(api_jarvis::handle_tuning_put),
+        )
         .route("/api/onboard/catalog", get(api_onboard::handle_catalog))
         .route(
             "/api/onboard/catalog/models",
@@ -1409,9 +1415,8 @@ pub async fn run_gateway(
             delete(api::handle_api_cron_delete).patch(api::handle_api_cron_patch),
         )
         .route("/api/cron/{id}/runs", get(api::handle_api_cron_runs))
-        // Note: `/api/cron/{id}/run` is registered on a separate router below
-        // with a longer TimeoutLayer — manual cron triggers run the job
-        // synchronously and routinely exceed the 30s gateway-wide default.
+        // Note: long-running POST routes are registered on separate routers
+        // below so they can exceed the gateway-wide default timeout.
         .route("/api/integrations", get(api::handle_api_integrations))
         .route(
             "/api/integrations/settings",
@@ -1428,6 +1433,8 @@ pub async fn run_gateway(
         .route("/api/cli-tools", get(api::handle_api_cli_tools))
         .route("/api/channels", get(api::handle_api_channels))
         .route("/api/health", get(api::handle_api_health))
+        .route("/api/tts/status", get(api_tts::handle_status))
+        .route("/api/tts/audio/{file_name}", get(api_tts::handle_audio))
         .route("/api/sessions", get(api::handle_api_sessions_list))
         .route("/api/sessions/running", get(api::handle_api_sessions_running))
         .route(
@@ -1527,6 +1534,19 @@ pub async fn run_gateway(
     // timeout.
     let cron_run_router: Router = Router::new()
         .route("/api/cron/{id}/run", post(api::handle_api_cron_run))
+        .with_state(state.clone())
+        .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(gateway_long_running_request_timeout_secs(&config.gateway)),
+        ));
+
+    // Local GPT-SoVITS generation can take longer than 30s on CPU when a text
+    // segment is not cached yet. Keep status and cached audio fetches on the
+    // default timeout, but allow generation to complete like other local
+    // long-running work.
+    let tts_speak_router: Router = Router::new()
+        .route("/api/tts/speak", post(api_tts::handle_speak))
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .layer(TimeoutLayer::with_status_code(
@@ -1534,7 +1554,7 @@ pub async fn run_gateway(
             Duration::from_secs(gateway_long_running_request_timeout_secs(&config.gateway)),
         ));
 
-    let inner = inner.merge(cron_run_router);
+    let inner = inner.merge(cron_run_router).merge(tts_speak_router);
 
     // Nest under path prefix when configured (axum strips prefix before routing).
     // nest() at "/prefix" handles both "/prefix" and "/prefix/*" but not "/prefix/"

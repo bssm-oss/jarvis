@@ -127,7 +127,7 @@ pub fn get_permissions_status() -> Vec<PermissionInfo> {
 pub fn get_runtime_platform() -> String {
     #[cfg(target_os = "macos")]
     {
-        return "macos".into();
+        "macos".into()
     }
 
     #[cfg(target_os = "linux")]

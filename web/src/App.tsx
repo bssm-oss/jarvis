@@ -1,15 +1,26 @@
-import { Component, createContext, useContext, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 
 import { loadLocale, saveLocale } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { DraftContext, useDraftStore } from './hooks/useDraft';
+import { useSSE } from './hooks/useSSE';
 import { getAdminPairCode, getOnboardStatus } from './lib/api';
 import { basePath } from './lib/basePath';
 import { ConfigDraftProvider } from './lib/draftStore';
 import { setLocale, type Locale } from './lib/i18n';
+import { getTauriCore } from './lib/tauri';
+import {
+  dispatchVoiceActivationSignal,
+  fetchVoiceActivationSignalsSince,
+  signalFromSseEvent,
+  type VoiceActivationSignal,
+} from './lib/voiceActivation';
 import { Router } from './router/router';
+
+const zeroClawLogoSrc = `${basePath}${import.meta.env.PROD ? '/_app/logo.png' : '/logo.png'}`;
+const VOICE_ACTIVATION_BRIDGE_MAX_AGE_MS = 12_000;
 
 // Locale context
 interface LocaleContextType {
@@ -148,7 +159,7 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
 
         <div className="text-center mb-8">
           <img
-            src={`${basePath}/_app/zeroclaw-trans.png`}
+            src={zeroClawLogoSrc}
             alt="ZeroClaw"
             className="h-20 w-20 rounded-2xl object-cover mx-auto mb-4 animate-float"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -200,6 +211,78 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
   );
 }
 
+function VoiceActivationBridge() {
+  const navigate = useNavigate();
+  const { events } = useSSE({ filterTypes: ['message'], maxEvents: 40 });
+  const handledRef = useRef(new Set<string>());
+  const lastPollMsRef = useRef(Date.now() - 15_000);
+
+  const handleSignal = useCallback((signal: VoiceActivationSignal, key: string) => {
+    if (handledRef.current.has(key)) return;
+    if (Date.now() - signal.createdAt > VOICE_ACTIVATION_BRIDGE_MAX_AGE_MS) return;
+    handledRef.current.add(key);
+    if (handledRef.current.size > 200) {
+      handledRef.current = new Set(Array.from(handledRef.current).slice(-100));
+    }
+
+    lastPollMsRef.current = Math.max(lastPollMsRef.current, signal.createdAt);
+
+    dispatchVoiceActivationSignal(signal);
+    if (
+      signal.phase === 'double_clap_detected' ||
+      signal.phase === 'wake_name_audio_started' ||
+      signal.phase === 'wake_confirmed'
+    ) {
+      sessionStorage.setItem('zeroclaw_voice_ack', signal.ackText);
+      navigate('/voice-activation');
+      const core = getTauriCore();
+      if (core?.invoke) {
+        void core.invoke('show_voice_activation').catch(() => undefined);
+      }
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const latest = events[events.length - 1];
+    if (!latest) return;
+    const signal = signalFromSseEvent(latest);
+    if (!signal) return;
+
+    handleSignal(signal, `${latest.id ?? latest['@timestamp'] ?? latest.timestamp ?? ''}:${signal.phase}`);
+  }, [events, handleSignal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const envelopes = await fetchVoiceActivationSignalsSince(lastPollMsRef.current);
+        if (!cancelled) {
+          for (const envelope of envelopes) {
+            handleSignal(envelope.signal, envelope.key);
+          }
+        }
+      } catch {
+        // SSE remains the primary path; polling only patches missed live events.
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => void poll(), 750);
+        }
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [handleSignal]);
+
+  return null;
+}
+
 function AppContent() {
   const { isAuthenticated, requiresPairing, loading, pair, logout } = useAuth();
   const [locale, setLocaleState] = useState(loadLocale());
@@ -238,6 +321,7 @@ function AppContent() {
       <ConfigDraftProvider>
         <LocaleContext.Provider value={{ locale, setAppLocale }}>
           <FreshInstallRedirect />
+          <VoiceActivationBridge />
           <Router />
         </LocaleContext.Provider>
       </ConfigDraftProvider>

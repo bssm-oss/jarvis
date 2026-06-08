@@ -1,0 +1,886 @@
+{
+	"Version": 3,
+	"Parameters": [
+		{
+			"Id": "ParamAngleX",
+			"GroupId": "ParamGroupFace",
+			"Name": "각도 X"
+		},
+		{
+			"Id": "ParamAngleY",
+			"GroupId": "ParamGroupFace",
+			"Name": "각도 Y"
+		},
+		{
+			"Id": "ParamAngleZ",
+			"GroupId": "ParamGroupFace",
+			"Name": "각도 Z"
+		},
+		{
+			"Id": "ParamCheek",
+			"GroupId": "ParamGroupFace",
+			"Name": "뺨의선"
+		},
+		{
+			"Id": "ParamFaceInkOn",
+			"GroupId": "ParamGroupFace",
+			"Name": "얼굴잉크 표시"
+		},
+		{
+			"Id": "ParamEyeLOpen",
+			"GroupId": "ParamGroupEyes",
+			"Name": "왼쪽 눈 뜨기"
+		},
+		{
+			"Id": "ParamEyeLSmile",
+			"GroupId": "ParamGroupEyes",
+			"Name": "왼쪽 눈 웃는 얼굴"
+		},
+		{
+			"Id": "ParamEyeLForm",
+			"GroupId": "ParamGroupEyes",
+			"Name": "왼쪽 눈 변형"
+		},
+		{
+			"Id": "ParamEyeROpen",
+			"GroupId": "ParamGroupEyes",
+			"Name": "오른쪽 눈 뜨기"
+		},
+		{
+			"Id": "ParamEyeRSmile",
+			"GroupId": "ParamGroupEyes",
+			"Name": "오른쪽 눈 웃는 얼굴"
+		},
+		{
+			"Id": "ParamEyeRForm",
+			"GroupId": "ParamGroupEyes",
+			"Name": "오른쪽 눈 변형"
+		},
+		{
+			"Id": "ParamEyeBallX",
+			"GroupId": "ParamGroupEyeballs",
+			"Name": "눈알 X"
+		},
+		{
+			"Id": "ParamEyeBallY",
+			"GroupId": "ParamGroupEyeballs",
+			"Name": "눈알 Y"
+		},
+		{
+			"Id": "ParamEyeBallForm",
+			"GroupId": "ParamGroupEyeballs",
+			"Name": "눈알 축소"
+		},
+		{
+			"Id": "ParamEyeEffect",
+			"GroupId": "ParamGroupEyeballs",
+			"Name": "눈 효과"
+		},
+		{
+			"Id": "ParamBrowLY",
+			"GroupId": "ParamGroupBrows",
+			"Name": "왼쪽 눈썹 상하"
+		},
+		{
+			"Id": "ParamBrowRY",
+			"GroupId": "ParamGroupBrows",
+			"Name": "오른쪽 눈썹 상하"
+		},
+		{
+			"Id": "ParamBrowLX",
+			"GroupId": "ParamGroupBrows",
+			"Name": "왼쪽 눈썹 좌우"
+		},
+		{
+			"Id": "ParamBrowRX",
+			"GroupId": "ParamGroupBrows",
+			"Name": "오른쪽 눈썹 좌우"
+		},
+		{
+			"Id": "ParamBrowLAngle",
+			"GroupId": "ParamGroupBrows",
+			"Name": "왼쪽 눈썹 각도"
+		},
+		{
+			"Id": "ParamBrowRAngle",
+			"GroupId": "ParamGroupBrows",
+			"Name": "오른쪽 눈썹 각도"
+		},
+		{
+			"Id": "ParamBrowLForm",
+			"GroupId": "ParamGroupBrows",
+			"Name": "왼쪽 눈썹 변형"
+		},
+		{
+			"Id": "ParamBrowRForm",
+			"GroupId": "ParamGroupBrows",
+			"Name": "오른쪽 눈썹 변형"
+		},
+		{
+			"Id": "ParamA",
+			"GroupId": "ParamGroupMouth",
+			"Name": "아"
+		},
+		{
+			"Id": "ParamI",
+			"GroupId": "ParamGroupMouth",
+			"Name": "이"
+		},
+		{
+			"Id": "ParamU",
+			"GroupId": "ParamGroupMouth",
+			"Name": "우"
+		},
+		{
+			"Id": "ParamE",
+			"GroupId": "ParamGroupMouth",
+			"Name": "에"
+		},
+		{
+			"Id": "ParamO",
+			"GroupId": "ParamGroupMouth",
+			"Name": "오"
+		},
+		{
+			"Id": "ParamMouthUp",
+			"GroupId": "ParamGroupMouth",
+			"Name": "입꼬리 올림"
+		},
+		{
+			"Id": "ParamMouthDown",
+			"GroupId": "ParamGroupMouth",
+			"Name": "입꼬리 처짐"
+		},
+		{
+			"Id": "ParamMouthAngry",
+			"GroupId": "ParamGroupMouth",
+			"Name": "부은 입"
+		},
+		{
+			"Id": "ParamMouthAngryLine",
+			"GroupId": "ParamGroupMouth",
+			"Name": "부은 입선"
+		},
+		{
+			"Id": "ParamBodyAngleX",
+			"GroupId": "ParamGroupBody",
+			"Name": "몸의 회전 X"
+		},
+		{
+			"Id": "ParamBodyAngleY",
+			"GroupId": "ParamGroupBody",
+			"Name": "몸의 회전 Y"
+		},
+		{
+			"Id": "ParamBodyAngleZ",
+			"GroupId": "ParamGroupBody",
+			"Name": "몸의 회전 Z"
+		},
+		{
+			"Id": "ParamBreath",
+			"GroupId": "ParamGroupBody",
+			"Name": "호흡"
+		},
+		{
+			"Id": "ParamLeftShoulderUp",
+			"GroupId": "ParamGroupBody",
+			"Name": "왼쪽 어깨의 위아래"
+		},
+		{
+			"Id": "ParamRightShoulderUp",
+			"GroupId": "ParamGroupBody",
+			"Name": "오른쪽 어깨의 위아래"
+		},
+		{
+			"Id": "ParamArmLA01",
+			"GroupId": "ParamGroupArmLA",
+			"Name": "왼팔 A 어깨의 회전"
+		},
+		{
+			"Id": "ParamArmLA02",
+			"GroupId": "ParamGroupArmLA",
+			"Name": "왼팔 A 팔꿈치의 회전"
+		},
+		{
+			"Id": "ParamArmLA03",
+			"GroupId": "ParamGroupArmLA",
+			"Name": "왼팔 A 손목의 회전"
+		},
+		{
+			"Id": "ParamHandLA",
+			"GroupId": "ParamGroupArmLA",
+			"Name": "왼손 A"
+		},
+		{
+			"Id": "ParamArmRA01",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "오른팔 A 어깨의 회전"
+		},
+		{
+			"Id": "ParamArmRA02",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "오른팔 A 팔꿈치의 회전"
+		},
+		{
+			"Id": "ParamArmRA03",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "오른팔 A 손목의 회전"
+		},
+		{
+			"Id": "ParamWandRotate",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "지팡이의 회전"
+		},
+		{
+			"Id": "ParamHandRA",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "오른손 A"
+		},
+		{
+			"Id": "ParamInkDrop",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "잉크흘림"
+		},
+		{
+			"Id": "ParamInkDropRotate",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "잉크흘림 회전"
+		},
+		{
+			"Id": "ParamInkDropOn",
+			"GroupId": "ParamGroupArmRA",
+			"Name": "잉크흘림 표시"
+		},
+		{
+			"Id": "ParamArmLB01",
+			"GroupId": "ParamGroupArmLB",
+			"Name": "왼팔 B 어깨의 회전"
+		},
+		{
+			"Id": "ParamArmLB02",
+			"GroupId": "ParamGroupArmLB",
+			"Name": "왼팔 B 팔꿈치의 회전"
+		},
+		{
+			"Id": "ParamArmLB03",
+			"GroupId": "ParamGroupArmLB",
+			"Name": "왼팔 B손목의 회전"
+		},
+		{
+			"Id": "ParamHandLB",
+			"GroupId": "ParamGroupArmLB",
+			"Name": "왼손 B"
+		},
+		{
+			"Id": "ParamHatForm",
+			"GroupId": "ParamGroupArmLB",
+			"Name": "모자의 변형"
+		},
+		{
+			"Id": "ParamArmRB01",
+			"GroupId": "ParamGroupArmRB",
+			"Name": "오른팔 B 어깨 회전"
+		},
+		{
+			"Id": "ParamArmRB02",
+			"GroupId": "ParamGroupArmRB",
+			"Name": "오른팔 B 팔꿈치의 회전"
+		},
+		{
+			"Id": "ParamArmRB02Y",
+			"GroupId": "ParamGroupArmRB",
+			"Name": "오른팔 B 팔의 Y"
+		},
+		{
+			"Id": "ParamArmRB03",
+			"GroupId": "ParamGroupArmRB",
+			"Name": "오른팔 B 손목 회전"
+		},
+		{
+			"Id": "ParamHandRB",
+			"GroupId": "ParamGroupArmRB",
+			"Name": "오른손 B"
+		},
+		{
+			"Id": "ParamAllX",
+			"GroupId": "ParamGroupOverall",
+			"Name": "전체이동 X"
+		},
+		{
+			"Id": "ParamAllY",
+			"GroupId": "ParamGroupOverall",
+			"Name": "전체이동 Y"
+		},
+		{
+			"Id": "ParamAllRotate",
+			"GroupId": "ParamGroupOverall",
+			"Name": "전체 회전"
+		},
+		{
+			"Id": "ParamHairFront",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 앞"
+		},
+		{
+			"Id": "ParamHairSideL",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 왼쪽 가로"
+		},
+		{
+			"Id": "ParamHairSideR",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 오른쪽 가로"
+		},
+		{
+			"Id": "ParamHairBack",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 뒤"
+		},
+		{
+			"Id": "ParamHairBackR",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 오른쪽 뒤"
+		},
+		{
+			"Id": "ParamHairBackL",
+			"GroupId": "ParamGroupSway",
+			"Name": "머리 흔들림 왼쪽 뒤"
+		},
+		{
+			"Id": "ParamoHairMesh",
+			"GroupId": "ParamGroupSway",
+			"Name": "메쉬 흔들림"
+		},
+		{
+			"Id": "ParamHairFrontFuwa",
+			"GroupId": "ParamGroupSway",
+			"Name": "앞머리 볼륨"
+		},
+		{
+			"Id": "ParamHairSideFuwa",
+			"GroupId": "ParamGroupSway",
+			"Name": "옆머리 볼륨"
+		},
+		{
+			"Id": "ParamHairBackFuwa",
+			"GroupId": "ParamGroupSway",
+			"Name": "뒷머리 볼륨"
+		},
+		{
+			"Id": "ParamWing",
+			"GroupId": "ParamGroupSway",
+			"Name": "깃털의 흔들림"
+		},
+		{
+			"Id": "ParamRibbon",
+			"GroupId": "ParamGroupSway",
+			"Name": "모자 리본의 흔들림"
+		},
+		{
+			"Id": "ParamHatBrim",
+			"GroupId": "ParamGroupSway",
+			"Name": "모자창의 흔들림"
+		},
+		{
+			"Id": "ParamHatTop",
+			"GroupId": "ParamGroupSway",
+			"Name": "모자 위의 흔들림"
+		},
+		{
+			"Id": "ParamAccessory1",
+			"GroupId": "ParamGroupSway",
+			"Name": "목 장식의 흔들림 1"
+		},
+		{
+			"Id": "ParamAccessory2",
+			"GroupId": "ParamGroupSway",
+			"Name": "목 장식의 흔들림 2"
+		},
+		{
+			"Id": "ParamString",
+			"GroupId": "ParamGroupSway",
+			"Name": "파카 끈의 흔들림"
+		},
+		{
+			"Id": "ParamRobeL",
+			"GroupId": "ParamGroupSway",
+			"Name": "로브의 흔들림 왼쪽"
+		},
+		{
+			"Id": "ParamRobeR",
+			"GroupId": "ParamGroupSway",
+			"Name": "로브의 흔들림 오른쪽"
+		},
+		{
+			"Id": "ParamRobeFuwa",
+			"GroupId": "ParamGroupSway",
+			"Name": "로브의 볼륨"
+		},
+		{
+			"Id": "ParamHeartMissOn",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 실패 표시"
+		},
+		{
+			"Id": "ParamHeartBackMissOn",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 뒤 실패 표시"
+		},
+		{
+			"Id": "ParamHeartColorRainbow",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 실패 무지개"
+		},
+		{
+			"Id": "ParamHeartHealOn",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 회복 표시"
+		},
+		{
+			"Id": "ParamHeartBackHealOn",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 뒤 회복 표시"
+		},
+		{
+			"Id": "ParamHeartColorHeal",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 회복 녹색"
+		},
+		{
+			"Id": "ParamHeartDrow",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 그리기"
+		},
+		{
+			"Id": "ParamHeartSize",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 확축"
+		},
+		{
+			"Id": "ParamHeartColorLight",
+			"GroupId": "ParamGroupHeart",
+			"Name": "하트 색변화"
+		},
+		{
+			"Id": "ParamWandInkColorRainbow",
+			"GroupId": "ParamGroupInk",
+			"Name": "지팡이 잉크색 무지개"
+		},
+		{
+			"Id": "ParamWandInkColorHeal",
+			"GroupId": "ParamGroupInk",
+			"Name": "지팡이 잉크색 녹색"
+		},
+		{
+			"Id": "ParamWandInk",
+			"GroupId": "ParamGroupInk",
+			"Name": "지팡이 잉크"
+		},
+		{
+			"Id": "ParamSmokeOn",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "연기 표시"
+		},
+		{
+			"Id": "ParamSmoke",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "연기"
+		},
+		{
+			"Id": "ParamExplosionChargeOn",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "폭발빛모으기 표시"
+		},
+		{
+			"Id": "ParamExplosionLightCharge",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "폭발빛 모으기"
+		},
+		{
+			"Id": "ParamExplosionOn",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "폭발 표시"
+		},
+		{
+			"Id": "ParamExplosion",
+			"GroupId": "ParamGroupExplosion",
+			"Name": "폭발"
+		},
+		{
+			"Id": "ParamRabbitElimination",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 소멸"
+		},
+		{
+			"Id": "ParamRabbitAppearance",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 출현"
+		},
+		{
+			"Id": "ParamRabbitSize",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 확축"
+		},
+		{
+			"Id": "ParamRabbitDraworder",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 그리기 순서"
+		},
+		{
+			"Id": "ParamRabbitEar",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 귀"
+		},
+		{
+			"Id": "ParamRabbitDirection",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 방향"
+		},
+		{
+			"Id": "ParamRabbitLight",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 색변화"
+		},
+		{
+			"Id": "ParamRabbitLightSize",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 빛 확축"
+		},
+		{
+			"Id": "ParamRabbitX",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 이동 X"
+		},
+		{
+			"Id": "ParamRabbitY",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 이동 Y"
+		},
+		{
+			"Id": "ParamRabbitRotate",
+			"GroupId": "ParamGroupRabbit",
+			"Name": "토끼 회전"
+		},
+		{
+			"Id": "ParamAuraOn",
+			"GroupId": "ParamGroupAura",
+			"Name": "아우라 표시"
+		},
+		{
+			"Id": "ParamAura",
+			"GroupId": "ParamGroupAura",
+			"Name": "아우라"
+		},
+		{
+			"Id": "ParamAuraColor1",
+			"GroupId": "ParamGroupAura",
+			"Name": "아우라 색변화1"
+		},
+		{
+			"Id": "ParamAuraColor2",
+			"GroupId": "ParamGroupAura",
+			"Name": "아우라 색변화2"
+		},
+		{
+			"Id": "ParamHeartLightOn",
+			"GroupId": "ParamGroupLight",
+			"Name": "빛 표시"
+		},
+		{
+			"Id": "ParamHeartLight",
+			"GroupId": "ParamGroupLight",
+			"Name": "빛 별"
+		},
+		{
+			"Id": "ParamHeartLightColor",
+			"GroupId": "ParamGroupLight",
+			"Name": "빛 색변화"
+		},
+		{
+			"Id": "ParamHealLightOn",
+			"GroupId": "ParamGroupLight",
+			"Name": "회복마법빛 표시"
+		},
+		{
+			"Id": "ParamHealLight",
+			"GroupId": "ParamGroupLight",
+			"Name": "회복마법빛"
+		},
+		{
+			"Id": "ParamStrengthenLightOn",
+			"GroupId": "ParamGroupLight",
+			"Name": "강화 마법 표시"
+		},
+		{
+			"Id": "ParamStrengthenLight",
+			"GroupId": "ParamGroupLight",
+			"Name": "강화 마법 빛"
+		},
+		{
+			"Id": "ParamStrengthenLightMove",
+			"GroupId": "ParamGroupLight",
+			"Name": "강화 마법 이동"
+		},
+		{
+			"Id": "ParamMagicPositionX",
+			"GroupId": "ParamGroupAllEffects",
+			"Name": "마법의 위치 X"
+		},
+		{
+			"Id": "ParamMagicPositionY",
+			"GroupId": "ParamGroupAllEffects",
+			"Name": "마법의 위치 Y"
+		},
+		{
+			"Id": "ParamAllColor1",
+			"GroupId": "ParamGroupAllEffects",
+			"Name": "전체 색1"
+		},
+		{
+			"Id": "ParamAllColor2",
+			"GroupId": "ParamGroupAllEffects",
+			"Name": "전체 색2"
+		}
+	],
+	"ParameterGroups": [
+		{
+			"Id": "ParamGroupFace",
+			"GroupId": "",
+			"Name": "얼굴"
+		},
+		{
+			"Id": "ParamGroupEyes",
+			"GroupId": "",
+			"Name": "눈"
+		},
+		{
+			"Id": "ParamGroupEyeballs",
+			"GroupId": "",
+			"Name": "눈알"
+		},
+		{
+			"Id": "ParamGroupBrows",
+			"GroupId": "",
+			"Name": "눈썹"
+		},
+		{
+			"Id": "ParamGroupMouth",
+			"GroupId": "",
+			"Name": "입"
+		},
+		{
+			"Id": "ParamGroupBody",
+			"GroupId": "",
+			"Name": "몸"
+		},
+		{
+			"Id": "ParamGroupArmLA",
+			"GroupId": "",
+			"Name": "왼팔 A"
+		},
+		{
+			"Id": "ParamGroupArmRA",
+			"GroupId": "",
+			"Name": "오른팔 A"
+		},
+		{
+			"Id": "ParamGroupArmLB",
+			"GroupId": "",
+			"Name": "왼팔 B"
+		},
+		{
+			"Id": "ParamGroupArmRB",
+			"GroupId": "",
+			"Name": "오른팔 B"
+		},
+		{
+			"Id": "ParamGroupOverall",
+			"GroupId": "",
+			"Name": "전체"
+		},
+		{
+			"Id": "ParamGroupSway",
+			"GroupId": "",
+			"Name": "흔들림"
+		},
+		{
+			"Id": "ParamGroupHeart",
+			"GroupId": "",
+			"Name": "하트"
+		},
+		{
+			"Id": "ParamGroupInk",
+			"GroupId": "",
+			"Name": "잉크"
+		},
+		{
+			"Id": "ParamGroupExplosion",
+			"GroupId": "",
+			"Name": "폭발"
+		},
+		{
+			"Id": "ParamGroupRabbit",
+			"GroupId": "",
+			"Name": "토끼"
+		},
+		{
+			"Id": "ParamGroupAura",
+			"GroupId": "",
+			"Name": "아우라"
+		},
+		{
+			"Id": "ParamGroupLight",
+			"GroupId": "",
+			"Name": "빛"
+		},
+		{
+			"Id": "ParamGroupAllEffects",
+			"GroupId": "",
+			"Name": "전체 이펙트"
+		}
+	],
+	"Parts": [
+		{
+			"Id": "PartCore",
+			"Name": "코어"
+		},
+		{
+			"Id": "Part",
+			"Name": "토끼"
+		},
+		{
+			"Id": "Part2",
+			"Name": "이펙트"
+		},
+		{
+			"Id": "PartInk",
+			"Name": "잉크"
+		},
+		{
+			"Id": "PartSmoke",
+			"Name": "연기"
+		},
+		{
+			"Id": "PartExplosionLight",
+			"Name": "폭발광"
+		},
+		{
+			"Id": "Partaura",
+			"Name": "아우라"
+		},
+		{
+			"Id": "PartLight",
+			"Name": "빛"
+		},
+		{
+			"Id": "PartHeart",
+			"Name": "하트"
+		},
+		{
+			"Id": "PartHat",
+			"Name": "모자"
+		},
+		{
+			"Id": "PartHairSide",
+			"Name": "옆머리"
+		},
+		{
+			"Id": "PartHairFront",
+			"Name": "앞머리"
+		},
+		{
+			"Id": "PartHairBack",
+			"Name": "뒷머리"
+		},
+		{
+			"Id": "PartBrow",
+			"Name": "눈썹"
+		},
+		{
+			"Id": "PartEye",
+			"Name": "눈"
+		},
+		{
+			"Id": "PartCheek",
+			"Name": "뺨"
+		},
+		{
+			"Id": "PartNose",
+			"Name": "코"
+		},
+		{
+			"Id": "PartMouth",
+			"Name": "입"
+		},
+		{
+			"Id": "PartFace",
+			"Name": "얼굴"
+		},
+		{
+			"Id": "PartEar",
+			"Name": "귀"
+		},
+		{
+			"Id": "PartNeck",
+			"Name": "목"
+		},
+		{
+			"Id": "PartRobe",
+			"Name": "로브"
+		},
+		{
+			"Id": "PartHoodie",
+			"Name": "파커"
+		},
+		{
+			"Id": "PartLeg",
+			"Name": "다리"
+		},
+		{
+			"Id": "PartArmLA",
+			"Name": "왼팔 A"
+		},
+		{
+			"Id": "PartArmRA",
+			"Name": "오른팔 A"
+		},
+		{
+			"Id": "PartArmLB",
+			"Name": "왼팔 B"
+		},
+		{
+			"Id": "PartArmRB",
+			"Name": "오른팔 B"
+		},
+		{
+			"Id": "PartSketch",
+			"Name": "[밑그림]"
+		},
+		{
+			"Id": "PartEyeBall",
+			"Name": "눈알"
+		},
+		{
+			"Id": "PartWandA",
+			"Name": "지팡이 A"
+		},
+		{
+			"Id": "PartWandB",
+			"Name": "지팡이 B"
+		}
+	],
+	"CombinedParameters": [
+		[
+			"ParamAngleX",
+			"ParamAngleY"
+		],
+		[
+			"ParamAllX",
+			"ParamAllY"
+		],
+		[
+			"ParamMagicPositionX",
+			"ParamMagicPositionY"
+		]
+	]
+}

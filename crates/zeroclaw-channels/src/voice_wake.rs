@@ -6,6 +6,7 @@
 //!
 //! Gated behind the `voice-wake` Cargo feature.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, bail};
@@ -17,6 +18,8 @@ use zeroclaw_config::schema::TranscriptionConfig;
 use zeroclaw_config::schema::VoiceWakeConfig;
 
 use zeroclaw_api::channel::{Channel, ChannelMessage, SendMessage};
+
+type TranscriptionProviderResolver = Arc<dyn Fn() -> String + Send + Sync>;
 
 // ── State machine ──────────────────────────────────────────────
 
@@ -44,12 +47,108 @@ impl std::fmt::Display for WakeState {
     }
 }
 
+/// Result of passing an audio-energy sample through the clap gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClapGateEvent {
+    None,
+    FirstClap,
+    Complete,
+    Expired,
+}
+
+/// Energy-based detector for a short clap sequence before wake-word capture.
+pub struct ClapDetector {
+    required_count: u8,
+    threshold: f32,
+    release_threshold: f32,
+    window: Duration,
+    cooldown: Duration,
+    count: u8,
+    ready_for_peak: bool,
+    first_clap_at: Option<Instant>,
+    last_clap_at: Option<Instant>,
+}
+
+impl ClapDetector {
+    #[must_use]
+    pub fn new(required_count: u8, threshold: f32, window: Duration, cooldown: Duration) -> Self {
+        Self {
+            required_count: required_count.max(1),
+            threshold,
+            release_threshold: threshold * 0.45,
+            window,
+            cooldown,
+            count: 0,
+            ready_for_peak: true,
+            first_clap_at: None,
+            last_clap_at: None,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.count = 0;
+        self.ready_for_peak = true;
+        self.first_clap_at = None;
+        self.last_clap_at = None;
+    }
+
+    pub fn observe(&mut self, energy: f32, now: Instant) -> ClapGateEvent {
+        let mut expired = false;
+        if let Some(first_clap_at) = self.first_clap_at
+            && now.duration_since(first_clap_at) > self.window
+        {
+            self.reset();
+            expired = true;
+        }
+
+        if energy <= self.release_threshold {
+            self.ready_for_peak = true;
+        }
+
+        if !is_clap_energy(energy, self.threshold) {
+            return if expired {
+                ClapGateEvent::Expired
+            } else {
+                ClapGateEvent::None
+            };
+        }
+
+        if !self.ready_for_peak {
+            return ClapGateEvent::None;
+        }
+
+        if let Some(last_clap_at) = self.last_clap_at
+            && now.duration_since(last_clap_at) < self.cooldown
+        {
+            return ClapGateEvent::None;
+        }
+
+        self.ready_for_peak = false;
+
+        if self.count == 0 {
+            self.first_clap_at = Some(now);
+        }
+
+        self.last_clap_at = Some(now);
+        self.count = self.count.saturating_add(1);
+
+        if self.count >= self.required_count {
+            self.reset();
+            ClapGateEvent::Complete
+        } else {
+            ClapGateEvent::FirstClap
+        }
+    }
+}
+
 // ── Channel implementation ─────────────────────────────────────
 
 /// Voice wake-word channel that activates on a spoken keyword.
 pub struct VoiceWakeChannel {
     config: VoiceWakeConfig,
     transcription_config: TranscriptionConfig,
+    /// Resolves the owning agent's current STT provider reference at use-time.
+    transcription_provider_resolver: TranscriptionProviderResolver,
     /// The alias key under `[channels.voice_wake.<alias>]` this handle is
     /// bound to. Used for attribution.
     alias: String,
@@ -62,9 +161,25 @@ impl VoiceWakeChannel {
         config: VoiceWakeConfig,
         transcription_config: TranscriptionConfig,
     ) -> Self {
+        Self::new_with_transcription_provider_resolver(
+            alias,
+            config,
+            transcription_config,
+            Arc::new(String::new),
+        )
+    }
+
+    /// Create a new `VoiceWakeChannel` with an agent-scoped STT resolver.
+    pub fn new_with_transcription_provider_resolver(
+        alias: impl Into<String>,
+        config: VoiceWakeConfig,
+        transcription_config: TranscriptionConfig,
+        transcription_provider_resolver: TranscriptionProviderResolver,
+    ) -> Self {
         Self {
             config,
             transcription_config,
+            transcription_provider_resolver,
             alias: alias.into(),
         }
     }
@@ -95,8 +210,25 @@ impl Channel for VoiceWakeChannel {
     async fn listen(&self, tx: mpsc::Sender<ChannelMessage>) -> Result<()> {
         let self_alias = self.alias.clone();
         let config = self.config.clone();
-        let transcription_manager = TranscriptionManager::new(&self.transcription_config)?
-            .with_agent_transcription_provider(self.alias.clone());
+        let mut transcription_manager = TranscriptionManager::new(&self.transcription_config)?;
+        let resolved_transcription_provider = (self.transcription_provider_resolver)();
+        if resolved_transcription_provider.trim().is_empty() {
+            let sole_provider = {
+                let names = transcription_manager.available_providers();
+                if names.len() == 1 {
+                    Some(names[0].to_string())
+                } else {
+                    None
+                }
+            };
+            if let Some(provider) = sole_provider {
+                transcription_manager =
+                    transcription_manager.with_agent_transcription_provider(provider);
+            }
+        } else {
+            transcription_manager = transcription_manager
+                .with_agent_transcription_provider(resolved_transcription_provider);
+        }
 
         // Run the blocking audio capture loop on a dedicated thread.
         let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<f32>>(4);
@@ -104,6 +236,16 @@ impl Channel for VoiceWakeChannel {
         let energy_threshold = config.energy_threshold;
         let silence_timeout = Duration::from_millis(u64::from(config.silence_timeout_ms));
         let max_capture = Duration::from_secs(u64::from(config.max_capture_secs));
+        let clap_gate_enabled = config.clap_gate_enabled;
+        let clap_gate_timeout = Duration::from_millis(u64::from(config.clap_gate_timeout_ms));
+        let post_wake_capture_delay =
+            Duration::from_millis(u64::from(config.post_wake_capture_delay_ms));
+        let mut clap_detector = ClapDetector::new(
+            config.clap_count,
+            config.clap_energy_threshold,
+            Duration::from_millis(u64::from(config.clap_window_ms)),
+            Duration::from_millis(u64::from(config.clap_cooldown_ms)),
+        );
         let sample_rate: u32;
         let channels_count: u16;
 
@@ -165,12 +307,22 @@ impl Channel for VoiceWakeChannel {
         let mut capture_buf: Vec<f32> = Vec::new();
         let mut last_voice_at = Instant::now();
         let mut capture_start = Instant::now();
+        let mut capture_not_before = Instant::now();
+        let mut capture_has_voice = false;
         let mut msg_counter: u64 = 0;
+        let mut clap_gate_armed = false;
+        let mut triggered_has_voice = false;
+        let mut last_energy_probe_log_at = Instant::now();
 
         ::zeroclaw_log::record!(
             INFO,
-            ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note)
-                .with_attrs(::serde_json::json!({"wake_word": wake_word})),
+            ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note).with_attrs(
+                ::serde_json::json!({
+                    "wake_word": wake_word,
+                    "clap_gate_enabled": clap_gate_enabled,
+                    "clap_count": config.clap_count,
+                })
+            ),
             "VoiceWake: entering listen loop"
         );
 
@@ -179,7 +331,109 @@ impl Channel for VoiceWakeChannel {
 
             match state {
                 WakeState::Listening => {
-                    if energy >= energy_threshold {
+                    if clap_gate_enabled {
+                        let now = Instant::now();
+                        if energy >= config.clap_energy_threshold * 0.5
+                            && now.duration_since(last_energy_probe_log_at)
+                                >= Duration::from_millis(250)
+                        {
+                            last_energy_probe_log_at = now;
+                            ::zeroclaw_log::record!(
+                                DEBUG,
+                                ::zeroclaw_log::Event::new(
+                                    module_path!(),
+                                    ::zeroclaw_log::Action::Note
+                                )
+                                .with_attrs(::serde_json::json!({
+                                    "voice_activation": "gesture",
+                                    "phase": "energy_probe",
+                                    "energy": energy,
+                                    "clap_energy_threshold": config.clap_energy_threshold,
+                                })),
+                                "VoiceWake: energy probe near clap threshold"
+                            );
+                        }
+                        match clap_detector.observe(energy, Instant::now()) {
+                            ClapGateEvent::FirstClap => {
+                                ::zeroclaw_log::record!(
+                                    INFO,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(
+                                        ::serde_json::json!({
+                                            "voice_activation": "gesture",
+                                            "phase": "first_clap",
+                                            "energy": energy,
+                                        })
+                                    ),
+                                    "VoiceWake: first clap detected"
+                                );
+                            }
+                            ClapGateEvent::Complete => {
+                                let capture_ready_at = Instant::now() + post_wake_capture_delay;
+                                ::zeroclaw_log::record!(
+                                    INFO,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(
+                                        ::serde_json::json!({
+                                            "voice_activation": "gesture",
+                                            "phase": "double_clap_detected",
+                                            "energy": energy,
+                                        })
+                                    ),
+                                    "VoiceWake: clap gesture complete — activating Jarvis"
+                                );
+                                ::zeroclaw_log::record!(
+                                    INFO,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(::serde_json::json!({
+                                        "text": "[double clap]",
+                                        "voice_activation": "activated",
+                                        "phase": "wake_confirmed",
+                                        "wake_word": wake_word.as_str(),
+                                        "wake_match": "double_clap",
+                                        "ack_text": config.activation_ack_text.as_str(),
+                                        "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
+                                        "energy": energy,
+                                    })),
+                                    "VoiceWake: double clap activated Jarvis — capturing utterance"
+                                );
+                                state = WakeState::Capturing;
+                                clap_gate_armed = false;
+                                triggered_has_voice = false;
+                                capture_has_voice = false;
+                                capture_buf.clear();
+                                capture_not_before = capture_ready_at;
+                                last_voice_at = capture_ready_at;
+                                capture_start = capture_ready_at;
+                            }
+                            ClapGateEvent::Expired => {
+                                ::zeroclaw_log::record!(
+                                    DEBUG,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(
+                                        ::serde_json::json!({
+                                            "voice_activation": "gesture",
+                                            "phase": "clap_window_expired",
+                                        })
+                                    ),
+                                    "VoiceWake: clap window expired"
+                                );
+                            }
+                            ClapGateEvent::None => {}
+                        }
+                    } else if energy >= energy_threshold {
                         ::zeroclaw_log::record!(
                             DEBUG,
                             ::zeroclaw_log::Event::new(
@@ -190,6 +444,8 @@ impl Channel for VoiceWakeChannel {
                             "VoiceWake: energy spike — transitioning to Triggered"
                         );
                         state = WakeState::Triggered;
+                        clap_gate_armed = false;
+                        triggered_has_voice = true;
                         capture_buf.clear();
                         capture_buf.extend_from_slice(&chunk);
                         last_voice_at = Instant::now();
@@ -197,23 +453,147 @@ impl Channel for VoiceWakeChannel {
                     }
                 }
                 WakeState::Triggered => {
+                    let now = Instant::now();
+                    if !triggered_has_voice {
+                        if energy >= energy_threshold {
+                            triggered_has_voice = true;
+                            last_voice_at = now;
+                            capture_start = now;
+                            capture_buf.clear();
+                            capture_buf.extend_from_slice(&chunk);
+
+                            if clap_gate_armed {
+                                ::zeroclaw_log::record!(
+                                    DEBUG,
+                                    ::zeroclaw_log::Event::new(
+                                        module_path!(),
+                                        ::zeroclaw_log::Action::Note
+                                    )
+                                    .with_attrs(
+                                        ::serde_json::json!({
+                                            "voice_activation": "gesture",
+                                            "phase": "wake_name_audio_started",
+                                            "energy": energy,
+                                        })
+                                    ),
+                                    "VoiceWake: wake-name audio started"
+                                );
+                            }
+                        } else if clap_gate_armed && capture_start.elapsed() >= clap_gate_timeout {
+                            ::zeroclaw_log::record!(
+                                INFO,
+                                ::zeroclaw_log::Event::new(
+                                    module_path!(),
+                                    ::zeroclaw_log::Action::Note
+                                )
+                                .with_attrs(::serde_json::json!({
+                                    "voice_activation": "gesture",
+                                    "phase": "wake_name_timeout",
+                                })),
+                                "VoiceWake: wake-name timeout — back to Listening"
+                            );
+                            state = WakeState::Listening;
+                            clap_gate_armed = false;
+                            capture_buf.clear();
+                        }
+                        continue;
+                    }
+
                     capture_buf.extend_from_slice(&chunk);
 
                     if energy >= energy_threshold {
-                        last_voice_at = Instant::now();
+                        last_voice_at = now;
                     }
 
-                    let since_voice = last_voice_at.elapsed();
-                    let since_start = capture_start.elapsed();
+                    let since_voice = now.duration_since(last_voice_at);
+                    let since_start = now.duration_since(capture_start);
 
-                    // After enough silence or max time, transcribe to check for wake word.
-                    if since_voice >= silence_timeout || since_start >= max_capture {
+                    let should_finish_wake_capture = should_finish_wake_capture(
+                        triggered_has_voice,
+                        since_voice,
+                        since_start,
+                        silence_timeout,
+                        max_capture,
+                    );
+
+                    // After the clap gate, do not send pure silence to Whisper.
+                    // The user may need a moment to say the wake name after the
+                    // second clap, and transcribing silence made the desktop feel
+                    // like it ignored the gesture.
+                    if should_finish_wake_capture && !triggered_has_voice {
                         ::zeroclaw_log::record!(
-                            DEBUG,
+                            INFO,
                             ::zeroclaw_log::Event::new(
                                 module_path!(),
                                 ::zeroclaw_log::Action::Note
-                            ),
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "voice_activation": "gesture",
+                                "phase": "wake_name_timeout_no_voice",
+                                "wake_word": wake_word.as_str(),
+                            })),
+                            "VoiceWake: wake-name window closed without voice"
+                        );
+                        state = WakeState::Listening;
+                        clap_gate_armed = false;
+                        triggered_has_voice = false;
+                        capture_has_voice = false;
+                        capture_buf.clear();
+                        continue;
+                    }
+
+                    // In the local Jarvis flow, the double-clap gate is the
+                    // intentional gesture. Once speech follows that gesture,
+                    // activate immediately instead of blocking the UI on a
+                    // wake-name transcription pass.
+                    if should_finish_wake_capture
+                        && should_activate_clap_gated_voice_without_transcript(
+                            clap_gate_armed,
+                            triggered_has_voice,
+                        )
+                    {
+                        ::zeroclaw_log::record!(
+                            INFO,
+                            ::zeroclaw_log::Event::new(
+                                module_path!(),
+                                ::zeroclaw_log::Action::Note
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "text": "[voice after clap]",
+                                "voice_activation": "activated",
+                                "phase": "wake_confirmed",
+                                "wake_word": wake_word.as_str(),
+                                "wake_match": "clap_voice_energy_fallback",
+                                "ack_text": config.activation_ack_text.as_str(),
+                                "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
+                                "energy": energy,
+                            })),
+                            "VoiceWake: clap-gated voice detected — capturing utterance"
+                        );
+                        let capture_ready_at = Instant::now() + post_wake_capture_delay;
+                        state = WakeState::Capturing;
+                        clap_gate_armed = false;
+                        triggered_has_voice = false;
+                        capture_has_voice = false;
+                        capture_buf.clear();
+                        capture_not_before = capture_ready_at;
+                        last_voice_at = capture_ready_at;
+                        capture_start = capture_ready_at;
+                        continue;
+                    }
+
+                    // After enough silence or max time, transcribe to check for wake word.
+                    if should_finish_wake_capture {
+                        ::zeroclaw_log::record!(
+                            INFO,
+                            ::zeroclaw_log::Event::new(
+                                module_path!(),
+                                ::zeroclaw_log::Action::Note
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "voice_activation": "gesture",
+                                "phase": "wake_check_transcribing",
+                            })),
                             "VoiceWake: Triggered window closed — transcribing for wake word"
                         );
 
@@ -226,31 +606,63 @@ impl Channel for VoiceWakeChannel {
                         {
                             Ok(text) => {
                                 let lower = text.to_lowercase();
-                                if lower.contains(&wake_word) {
+                                let matched_by_wake_word = wake_word_matches(&lower, &wake_word);
+                                let matched_by_clap_voice_fallback = clap_voice_fallback_matches(
+                                    &lower,
+                                    &wake_word,
+                                    clap_gate_armed,
+                                );
+                                if matched_by_wake_word || matched_by_clap_voice_fallback {
                                     ::zeroclaw_log::record!(
                                         INFO,
                                         ::zeroclaw_log::Event::new(
                                             module_path!(),
                                             ::zeroclaw_log::Action::Note
                                         )
-                                        .with_attrs(::serde_json::json!({"text": text})),
+                                        .with_attrs(
+                                            ::serde_json::json!({
+                                                "text": text,
+                                                "voice_activation": "activated",
+                                                "phase": "wake_confirmed",
+                                                "wake_word": wake_word.as_str(),
+                                                "wake_match": if matched_by_wake_word { "wake_word" } else { "clap_voice_fallback" },
+                                                "ack_text": config.activation_ack_text.as_str(),
+                                                "post_wake_capture_delay_ms": config.post_wake_capture_delay_ms,
+                                                "energy": energy,
+                                            })
+                                        ),
                                         "VoiceWake: wake word detected — capturing utterance"
                                     );
+                                    let capture_ready_at = Instant::now() + post_wake_capture_delay;
                                     state = WakeState::Capturing;
+                                    clap_gate_armed = false;
+                                    triggered_has_voice = false;
+                                    capture_has_voice = false;
                                     capture_buf.clear();
-                                    last_voice_at = Instant::now();
-                                    capture_start = Instant::now();
+                                    capture_not_before = capture_ready_at;
+                                    last_voice_at = capture_ready_at;
+                                    capture_start = capture_ready_at;
                                 } else {
                                     ::zeroclaw_log::record!(
-                                        DEBUG,
+                                        INFO,
                                         ::zeroclaw_log::Event::new(
                                             module_path!(),
                                             ::zeroclaw_log::Action::Note
                                         )
-                                        .with_attrs(::serde_json::json!({"text": text})),
+                                        .with_attrs(
+                                            ::serde_json::json!({
+                                                "voice_activation": "gesture",
+                                                "phase": "no_wake_word",
+                                                "text": text,
+                                                "wake_word": wake_word.as_str(),
+                                            })
+                                        ),
                                         "VoiceWake: no wake word — back to Listening"
                                     );
                                     state = WakeState::Listening;
+                                    clap_gate_armed = false;
+                                    triggered_has_voice = false;
+                                    capture_has_voice = false;
                                     capture_buf.clear();
                                 }
                             }
@@ -266,28 +678,70 @@ impl Channel for VoiceWakeChannel {
                                     "VoiceWake: transcription error during wake check"
                                 );
                                 state = WakeState::Listening;
+                                clap_gate_armed = false;
+                                triggered_has_voice = false;
+                                capture_has_voice = false;
                                 capture_buf.clear();
                             }
                         }
                     }
                 }
                 WakeState::Capturing => {
+                    let now = Instant::now();
+                    if now < capture_not_before {
+                        continue;
+                    }
+
                     capture_buf.extend_from_slice(&chunk);
 
                     if energy >= energy_threshold {
-                        last_voice_at = Instant::now();
+                        capture_has_voice = true;
+                        last_voice_at = now;
                     }
 
-                    let since_voice = last_voice_at.elapsed();
-                    let since_start = capture_start.elapsed();
+                    let since_voice = now.duration_since(last_voice_at);
+                    let since_start = now.duration_since(capture_start);
 
-                    if since_voice >= silence_timeout || since_start >= max_capture {
+                    let should_transcribe = should_finish_utterance_capture(
+                        capture_has_voice,
+                        since_voice,
+                        since_start,
+                        silence_timeout,
+                        max_capture,
+                    );
+
+                    if should_transcribe {
+                        if !capture_has_voice {
+                            ::zeroclaw_log::record!(
+                                INFO,
+                                ::zeroclaw_log::Event::new(
+                                    module_path!(),
+                                    ::zeroclaw_log::Action::Note
+                                )
+                                .with_attrs(::serde_json::json!({
+                                    "voice_activation": "activated",
+                                    "phase": "utterance_timeout_no_voice",
+                                    "max_capture_secs": config.max_capture_secs,
+                                })),
+                                "VoiceWake: utterance capture timed out before voice started"
+                            );
+                            state = WakeState::Listening;
+                            clap_gate_armed = false;
+                            triggered_has_voice = false;
+                            capture_buf.clear();
+                            continue;
+                        }
+
                         ::zeroclaw_log::record!(
-                            DEBUG,
+                            INFO,
                             ::zeroclaw_log::Event::new(
                                 module_path!(),
                                 ::zeroclaw_log::Action::Note
-                            ),
+                            )
+                            .with_attrs(::serde_json::json!({
+                                "voice_activation": "activated",
+                                "phase": "utterance_transcribing",
+                            })),
                             "VoiceWake: utterance capture complete — transcribing"
                         );
 
@@ -299,41 +753,71 @@ impl Channel for VoiceWakeChannel {
                             .await
                         {
                             Ok(text) => {
-                                let trimmed = text.trim().to_string();
-                                if !trimmed.is_empty() {
-                                    msg_counter += 1;
-                                    let ts = SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs();
+                                let next_msg_counter = msg_counter.saturating_add(1);
+                                let ts = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
 
-                                    let msg = ChannelMessage {
-                                        id: format!("voice_wake_{msg_counter}"),
-                                        sender: "voice_user".into(),
-                                        reply_target: "voice_user".into(),
-                                        content: trimmed,
-                                        channel: "voice_wake".into(),
-                                        channel_alias: Some(self_alias.clone()),
-                                        timestamp: ts,
-                                        thread_ts: None,
-                                        interruption_scope_id: None,
-                                        attachments: vec![],
-                                    };
+                                if let Some(msg) = build_voice_wake_message(
+                                    &self_alias,
+                                    next_msg_counter,
+                                    &text,
+                                    ts,
+                                ) {
+                                    msg_counter = next_msg_counter;
+                                    let dispatch_text = msg.content.clone();
+                                    let content_len = dispatch_text.len();
 
-                                    if let Err(e) = tx.send(msg).await {
-                                        ::zeroclaw_log::record!(
-                                            WARN,
-                                            ::zeroclaw_log::Event::new(
-                                                module_path!(),
-                                                ::zeroclaw_log::Action::Note
-                                            )
-                                            .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
-                                            .with_attrs(
-                                                ::serde_json::json!({"error": format!("{}", e)})
-                                            ),
-                                            "VoiceWake: failed to dispatch message"
-                                        );
+                                    match tx.send(msg).await {
+                                        Ok(()) => {
+                                            ::zeroclaw_log::record!(
+                                                INFO,
+                                                ::zeroclaw_log::Event::new(
+                                                    module_path!(),
+                                                    ::zeroclaw_log::Action::Note
+                                                )
+                                                .with_attrs(::serde_json::json!({
+                                                    "voice_activation": "task",
+                                                    "phase": "utterance_dispatched",
+                                                    "content_len": content_len,
+                                                    "text": dispatch_text,
+                                                    "raw_text": text,
+                                                })),
+                                                "VoiceWake: utterance dispatched"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            ::zeroclaw_log::record!(
+                                                WARN,
+                                                ::zeroclaw_log::Event::new(
+                                                    module_path!(),
+                                                    ::zeroclaw_log::Action::Note
+                                                )
+                                                .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
+                                                .with_attrs(::serde_json::json!({
+                                                    "error": format!("{}", e)
+                                                })),
+                                                "VoiceWake: failed to dispatch message"
+                                            );
+                                        }
                                     }
+                                } else {
+                                    ::zeroclaw_log::record!(
+                                        INFO,
+                                        ::zeroclaw_log::Event::new(
+                                            module_path!(),
+                                            ::zeroclaw_log::Action::Note
+                                        )
+                                        .with_attrs(
+                                            ::serde_json::json!({
+                                                "voice_activation": "task",
+                                                "phase": "utterance_empty",
+                                                "raw_text": text,
+                                            })
+                                        ),
+                                        "VoiceWake: utterance transcription was empty"
+                                    );
                                 }
                             }
                             Err(e) => {
@@ -351,6 +835,9 @@ impl Channel for VoiceWakeChannel {
                         }
 
                         state = WakeState::Listening;
+                        clap_gate_armed = false;
+                        triggered_has_voice = false;
+                        capture_has_voice = false;
                         capture_buf.clear();
                     }
                 }
@@ -374,6 +861,114 @@ pub fn compute_rms_energy(samples: &[f32]) -> f32 {
     }
     let sum_sq: f32 = samples.iter().map(|s| s * s).sum();
     (sum_sq / samples.len() as f32).sqrt()
+}
+
+fn should_finish_utterance_capture(
+    capture_has_voice: bool,
+    since_voice: Duration,
+    since_start: Duration,
+    silence_timeout: Duration,
+    max_capture: Duration,
+) -> bool {
+    (capture_has_voice && since_voice >= silence_timeout) || since_start >= max_capture
+}
+
+fn should_finish_wake_capture(
+    triggered_has_voice: bool,
+    since_voice: Duration,
+    since_start: Duration,
+    silence_timeout: Duration,
+    max_capture: Duration,
+) -> bool {
+    (triggered_has_voice && since_voice >= silence_timeout) || since_start >= max_capture
+}
+
+fn should_activate_clap_gated_voice_without_transcript(
+    clap_gate_armed: bool,
+    triggered_has_voice: bool,
+) -> bool {
+    clap_gate_armed && triggered_has_voice
+}
+
+fn normalize_voice_utterance_text(text: &str) -> String {
+    text.trim()
+        .replace("최적과", "최저가")
+        .replace("최적가", "최저가")
+}
+
+fn build_voice_wake_message(
+    channel_alias: &str,
+    msg_counter: u64,
+    raw_text: &str,
+    timestamp: u64,
+) -> Option<ChannelMessage> {
+    let trimmed = raw_text.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut msg = ChannelMessage::new(
+        format!("voice_wake_{msg_counter}"),
+        "voice_user",
+        "voice_user",
+        normalize_voice_utterance_text(trimmed),
+        "voice_wake",
+        timestamp,
+    );
+    msg.channel_alias = Some(channel_alias.to_string());
+    Some(msg)
+}
+
+/// Return whether an RMS energy sample should be counted as a clap peak.
+#[must_use]
+pub fn is_clap_energy(energy: f32, threshold: f32) -> bool {
+    energy >= threshold
+}
+
+/// Return whether a transcript contains the configured wake word.
+///
+/// The default Jarvis wake name is often spoken in Korean on this machine, and
+/// Whisper may emit either the English spelling or the Korean transliteration.
+#[must_use]
+pub fn wake_word_matches(transcript_lower: &str, wake_word_lower: &str) -> bool {
+    if transcript_lower.contains(wake_word_lower) {
+        return true;
+    }
+
+    if wake_word_lower == "jarvis" {
+        if transcript_lower.chars().filter(|ch| *ch == '자').count() >= 2 {
+            return true;
+        }
+
+        return ["javis", "자비스", "쟈비스", "차비스"]
+            .iter()
+            .any(|alias| transcript_lower.contains(alias));
+    }
+
+    false
+}
+
+/// Return whether spoken audio after the clap gate is enough to proceed.
+///
+/// This is intentionally restricted to the local Jarvis flow. Very short Korean
+/// wake-name clips can be hallucinated by Whisper as unrelated stock phrases, so
+/// after the explicit double-clap gesture a non-empty voice segment is treated
+/// as a wake intent.
+#[must_use]
+pub fn clap_voice_fallback_matches(
+    transcript_lower: &str,
+    wake_word_lower: &str,
+    clap_gate_armed: bool,
+) -> bool {
+    if !clap_gate_armed || wake_word_lower != "jarvis" {
+        return false;
+    }
+
+    transcript_lower
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && !ch.is_ascii_punctuation())
+        .count()
+        >= 2
 }
 
 /// Encode raw f32 PCM samples as a WAV byte buffer (16-bit PCM).
@@ -479,6 +1074,304 @@ mod tests {
         );
     }
 
+    #[test]
+    fn utterance_capture_waits_for_voice_before_silence_timeout() {
+        let silence_timeout = Duration::from_millis(1200);
+        let max_capture = Duration::from_secs(8);
+
+        assert!(
+            !should_finish_utterance_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "silence before the user starts speaking must not end capture"
+        );
+
+        assert!(should_finish_utterance_capture(
+            true,
+            Duration::from_millis(1500),
+            Duration::from_secs(3),
+            silence_timeout,
+            max_capture,
+        ));
+
+        assert!(should_finish_utterance_capture(
+            false,
+            Duration::from_secs(9),
+            Duration::from_secs(9),
+            silence_timeout,
+            max_capture,
+        ));
+    }
+
+    #[test]
+    fn wake_capture_waits_for_voice_after_clap_gate() {
+        let silence_timeout = Duration::from_millis(1200);
+        let max_capture = Duration::from_secs(8);
+
+        assert!(
+            !should_finish_wake_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "silence after the second clap should leave time to say the wake name"
+        );
+
+        assert!(should_finish_wake_capture(
+            true,
+            Duration::from_millis(1500),
+            Duration::from_millis(2500),
+            silence_timeout,
+            max_capture,
+        ));
+
+        assert!(should_finish_wake_capture(
+            false,
+            Duration::from_secs(9),
+            Duration::from_secs(9),
+            silence_timeout,
+            max_capture,
+        ));
+    }
+
+    #[test]
+    fn clap_gated_voice_can_activate_without_waiting_for_wake_transcript() {
+        assert!(should_activate_clap_gated_voice_without_transcript(
+            true, true
+        ));
+        assert!(!should_activate_clap_gated_voice_without_transcript(
+            true, false
+        ));
+        assert!(!should_activate_clap_gated_voice_without_transcript(
+            false, true
+        ));
+    }
+
+    #[test]
+    fn normalize_voice_utterance_repairs_common_price_mishearing() {
+        assert_eq!(
+            normalize_voice_utterance_text("최적과 소고기를 찾아줘"),
+            "최저가 소고기를 찾아줘"
+        );
+        assert_eq!(
+            normalize_voice_utterance_text(" 최적가 상품 찾아줘 "),
+            "최저가 상품 찾아줘"
+        );
+    }
+
+    #[test]
+    fn voice_wake_message_sets_alias_and_normalized_content() {
+        let msg = build_voice_wake_message("jarvis", 7, " 최적과 소고기를 찾아줘 ", 1_780_000_000)
+            .expect("non-empty voice text should dispatch");
+
+        assert_eq!(msg.id, "voice_wake_7");
+        assert_eq!(msg.sender, "voice_user");
+        assert_eq!(msg.reply_target, "voice_user");
+        assert_eq!(msg.content, "최저가 소고기를 찾아줘");
+        assert_eq!(msg.channel, "voice_wake");
+        assert_eq!(msg.channel_alias.as_deref(), Some("jarvis"));
+        assert_eq!(msg.timestamp, 1_780_000_000);
+
+        assert!(build_voice_wake_message("jarvis", 8, "   ", 1).is_none());
+    }
+
+    #[test]
+    fn jarvis_double_clap_immediately_activates_and_dispatches_task() {
+        let config = VoiceWakeConfig {
+            wake_word: "jarvis".into(),
+            clap_gate_enabled: true,
+            clap_count: 2,
+            clap_energy_threshold: 0.015,
+            clap_window_ms: 1200,
+            clap_cooldown_ms: 90,
+            silence_timeout_ms: 1200,
+            energy_threshold: 0.002,
+            max_capture_secs: 8,
+            post_wake_capture_delay_ms: 3000,
+            ..VoiceWakeConfig::default()
+        };
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            config.clap_count,
+            config.clap_energy_threshold,
+            Duration::from_millis(u64::from(config.clap_window_ms)),
+            Duration::from_millis(u64::from(config.clap_cooldown_ms)),
+        );
+
+        assert_eq!(
+            detector.observe(0.020, start),
+            ClapGateEvent::FirstClap,
+            "first clap should arm the gesture gate"
+        );
+        assert_eq!(
+            detector.observe(0.001, start + Duration::from_millis(80)),
+            ClapGateEvent::None,
+            "energy must drop before the next clap peak can count"
+        );
+        assert_eq!(
+            detector.observe(0.023, start + Duration::from_millis(160)),
+            ClapGateEvent::Complete,
+            "second clap inside the configured window should complete the gate"
+        );
+
+        let silence_timeout = Duration::from_millis(u64::from(config.silence_timeout_ms));
+        let max_capture = Duration::from_secs(u64::from(config.max_capture_secs));
+        assert!(
+            !should_finish_utterance_capture(
+                false,
+                Duration::from_millis(1500),
+                Duration::from_millis(1500),
+                silence_timeout,
+                max_capture,
+            ),
+            "post-wake silence before the user speaks must not dispatch an empty command"
+        );
+        assert!(should_finish_utterance_capture(
+            true,
+            Duration::from_millis(1300),
+            Duration::from_millis(3600),
+            silence_timeout,
+            max_capture,
+        ));
+
+        let msg = build_voice_wake_message("jarvis", 1, "최적과 소고기를 찾아줘", 1)
+            .expect("recognized command should dispatch");
+        assert_eq!(msg.channel_alias.as_deref(), Some("jarvis"));
+        assert_eq!(msg.content, "최저가 소고기를 찾아줘");
+    }
+
+    // ── Clap gate tests ───────────────────────────────────
+
+    #[test]
+    fn clap_energy_uses_threshold() {
+        assert!(is_clap_energy(0.25, 0.25));
+        assert!(!is_clap_energy(0.249, 0.25));
+    }
+
+    #[test]
+    fn wake_word_matches_jarvis_transliterations() {
+        assert!(wake_word_matches("hey jarvis", "jarvis"));
+        assert!(wake_word_matches("javis", "jarvis"));
+        assert!(wake_word_matches("자비스", "jarvis"));
+        assert!(wake_word_matches("차비스", "jarvis"));
+        assert!(wake_word_matches("자, 자, 자", "jarvis"));
+        assert!(!wake_word_matches("서비스", "jarvis"));
+    }
+
+    #[test]
+    fn clap_voice_fallback_requires_jarvis_clap_gate_and_voice_text() {
+        assert!(clap_voice_fallback_matches(
+            "수고하셨습니다 수고하셨습니다",
+            "jarvis",
+            true
+        ));
+        assert!(!clap_voice_fallback_matches(
+            "수고하셨습니다",
+            "hey zeroclaw",
+            true
+        ));
+        assert!(!clap_voice_fallback_matches(
+            "수고하셨습니다",
+            "jarvis",
+            false
+        ));
+        assert!(!clap_voice_fallback_matches(" , ", "jarvis", true));
+    }
+
+    #[test]
+    fn clap_detector_completes_after_two_peaks_inside_window() {
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            2,
+            0.25,
+            Duration::from_millis(900),
+            Duration::from_millis(120),
+        );
+
+        assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
+        assert_eq!(
+            detector.observe(0.05, start + Duration::from_millis(100)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
+            detector.observe(0.31, start + Duration::from_millis(200)),
+            ClapGateEvent::Complete
+        );
+    }
+
+    #[test]
+    fn clap_detector_respects_cooldown() {
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            2,
+            0.25,
+            Duration::from_millis(900),
+            Duration::from_millis(120),
+        );
+
+        assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
+        assert_eq!(
+            detector.observe(0.32, start + Duration::from_millis(50)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
+            detector.observe(0.05, start + Duration::from_millis(80)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
+            detector.observe(0.32, start + Duration::from_millis(150)),
+            ClapGateEvent::Complete
+        );
+    }
+
+    #[test]
+    fn clap_detector_ignores_sustained_loud_sound() {
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            2,
+            0.25,
+            Duration::from_millis(900),
+            Duration::from_millis(120),
+        );
+
+        assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
+        assert_eq!(
+            detector.observe(0.31, start + Duration::from_millis(200)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
+            detector.observe(0.32, start + Duration::from_millis(400)),
+            ClapGateEvent::None
+        );
+    }
+
+    #[test]
+    fn clap_detector_expires_old_partial_gesture() {
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            2,
+            0.25,
+            Duration::from_millis(900),
+            Duration::from_millis(120),
+        );
+
+        assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
+        assert_eq!(
+            detector.observe(0.01, start + Duration::from_millis(901)),
+            ClapGateEvent::Expired
+        );
+        assert_eq!(
+            detector.observe(0.30, start + Duration::from_millis(1_000)),
+            ClapGateEvent::FirstClap
+        );
+    }
+
     // ── WAV encoding tests ─────────────────────────────────
 
     #[test]
@@ -545,6 +1438,14 @@ mod tests {
         assert_eq!(config.silence_timeout_ms, 2000);
         assert!((config.energy_threshold - 0.01).abs() < f32::EPSILON);
         assert_eq!(config.max_capture_secs, 30);
+        assert!(!config.clap_gate_enabled);
+        assert_eq!(config.clap_count, 2);
+        assert!((config.clap_energy_threshold - 0.25).abs() < f32::EPSILON);
+        assert_eq!(config.clap_window_ms, 900);
+        assert_eq!(config.clap_cooldown_ms, 120);
+        assert_eq!(config.clap_gate_timeout_ms, 5000);
+        assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 1800);
     }
 
     #[test]
@@ -559,6 +1460,9 @@ mod tests {
         // Defaults preserved for unset fields
         assert_eq!(config.silence_timeout_ms, 2000);
         assert!((config.energy_threshold - 0.01).abs() < f32::EPSILON);
+        assert_eq!(config.clap_count, 2);
+        assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 1800);
     }
 
     #[test]
@@ -568,12 +1472,28 @@ mod tests {
             silence_timeout_ms = 3000
             energy_threshold = 0.05
             max_capture_secs = 15
+            clap_gate_enabled = true
+            clap_count = 2
+            clap_energy_threshold = 0.35
+            clap_window_ms = 700
+            clap_cooldown_ms = 100
+            clap_gate_timeout_ms = 4000
+            activation_ack_text = "네 주인님 무엇을 도와드릴까요?"
+            post_wake_capture_delay_ms = 2500
         "#;
         let config: VoiceWakeConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.wake_word, "hello bot");
         assert_eq!(config.silence_timeout_ms, 3000);
         assert!((config.energy_threshold - 0.05).abs() < f32::EPSILON);
         assert_eq!(config.max_capture_secs, 15);
+        assert!(config.clap_gate_enabled);
+        assert_eq!(config.clap_count, 2);
+        assert!((config.clap_energy_threshold - 0.35).abs() < f32::EPSILON);
+        assert_eq!(config.clap_window_ms, 700);
+        assert_eq!(config.clap_cooldown_ms, 100);
+        assert_eq!(config.clap_gate_timeout_ms, 4000);
+        assert_eq!(config.activation_ack_text, "네 주인님 무엇을 도와드릴까요?");
+        assert_eq!(config.post_wake_capture_delay_ms, 2500);
     }
 
     #[test]
@@ -627,5 +1547,18 @@ mod tests {
         let transcription_config = TranscriptionConfig::default();
         let channel = VoiceWakeChannel::new("testbot", config, transcription_config);
         assert_eq!(channel.name(), "voice_wake");
+    }
+
+    #[test]
+    fn voice_wake_channel_keeps_provider_selection_as_resolver() {
+        let config = VoiceWakeConfig::default();
+        let transcription_config = TranscriptionConfig::default();
+        let channel = VoiceWakeChannel::new_with_transcription_provider_resolver(
+            "jarvis",
+            config,
+            transcription_config,
+            Arc::new(|| "openai.jarvis".to_string()),
+        );
+        assert_eq!((channel.transcription_provider_resolver)(), "openai.jarvis");
     }
 }

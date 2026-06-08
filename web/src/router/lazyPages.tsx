@@ -7,9 +7,11 @@ export const AgentWorkspaceExplorer = lazy(() => import('../pages/AgentWorkspace
 export const Tools = lazy(() => import('../pages/Tools'));
 export const Cron = lazy(() => import('../pages/Cron'));
 export const Integrations = lazy(() => import('../pages/Integrations'));
+export const JarvisControl = lazy(() => import('../pages/JarvisControl'));
 export const Config = lazy(() => import('../pages/Config'));
 export const Logs = lazy(() => import('../pages/Logs'));
 export const Doctor = lazy(() => import('../pages/Doctor'));
 export const Pairing = lazy(() => import('../pages/Pairing'));
 export const Canvas = lazy(() => import('../pages/Canvas'));
 export const Onboard = lazy(() => import('../pages/onboard/Onboard'));
+export const VoiceActivation = lazy(() => import('../pages/VoiceActivation'));

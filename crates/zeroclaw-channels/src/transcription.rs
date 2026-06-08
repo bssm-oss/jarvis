@@ -591,6 +591,7 @@ pub struct LocalWhisperProvider {
     alias: String,
     url: String,
     bearer_token: String,
+    language: Option<String>,
     max_audio_bytes: usize,
     timeout_secs: u64,
 }
@@ -634,6 +635,7 @@ impl LocalWhisperProvider {
             alias: alias.to_string(),
             url,
             bearer_token,
+            language: config.language.clone(),
             max_audio_bytes: config.max_audio_bytes,
             timeout_secs: config.timeout_secs,
         })
@@ -667,10 +669,15 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .file_name(normalized_name)
             .mime_str(mime)?;
 
+        let mut form = Form::new().part("file", file_part);
+        if let Some(ref lang) = self.language {
+            form = form.text("language", lang.clone());
+        }
+
         let resp = client
             .post(&self.url)
             .bearer_auth(&self.bearer_token)
-            .multipart(Form::new().part("file", file_part))
+            .multipart(form)
             .timeout(std::time::Duration::from_secs(self.timeout_secs))
             .send()
             .await
@@ -821,7 +828,9 @@ impl TranscriptionManager {
         file_name: &str,
         transcription_provider: &str,
     ) -> Result<String> {
-        let p = self.transcription_providers.get(transcription_provider).ok_or_else(|| {
+        let provider_key = self
+            .resolve_provider_key(transcription_provider)
+            .ok_or_else(|| {
             let available: Vec<&str> = self.transcription_providers.keys().map(|k| k.as_str()).collect();
             ::zeroclaw_log::record!(
                 ERROR,
@@ -837,10 +846,28 @@ impl TranscriptionManager {
                 "Transcription transcription_provider '{transcription_provider}' not configured. Available: {available:?}"
             ))
         })?;
+        let Some(p) = self.transcription_providers.get(&provider_key) else {
+            bail!("Resolved transcription provider '{provider_key}' disappeared");
+        };
 
         use ::zeroclaw_log::Instrument;
         let span = ::zeroclaw_log::attribution_span!(p.as_ref());
         p.transcribe(audio_data, file_name).instrument(span).await
+    }
+
+    fn resolve_provider_key(&self, transcription_provider: &str) -> Option<String> {
+        if self
+            .transcription_providers
+            .contains_key(transcription_provider)
+        {
+            return Some(transcription_provider.to_string());
+        }
+
+        let (provider_type, _) = transcription_provider.split_once('.')?;
+        let provider_type = provider_type.replace('-', "_");
+        self.transcription_providers
+            .contains_key(provider_type.as_str())
+            .then_some(provider_type)
     }
 
     /// List registered transcription_provider names.
@@ -1117,6 +1144,43 @@ mod tests {
     }
 
     #[test]
+    fn manager_resolves_dotted_agent_provider_to_registered_family() {
+        // SAFETY: test-only, single-threaded test runner.
+        unsafe { std::env::remove_var("GROQ_API_KEY") };
+
+        let config = TranscriptionConfig {
+            openai: Some(zeroclaw_config::schema::OpenAiSttConfig {
+                api_key: Some("test-openai-key".to_string()),
+                model: "whisper-1".to_string(),
+            }),
+            ..TranscriptionConfig::default()
+        };
+
+        let manager = TranscriptionManager::new(&config).unwrap();
+        assert_eq!(
+            manager.resolve_provider_key("openai.jarvis"),
+            Some("openai".to_string())
+        );
+    }
+
+    #[test]
+    fn manager_normalizes_kebab_case_dotted_agent_provider() {
+        // SAFETY: test-only, single-threaded test runner.
+        unsafe { std::env::remove_var("GROQ_API_KEY") };
+
+        let config = TranscriptionConfig {
+            local_whisper: Some(local_whisper_config("http://127.0.0.1:9999/v1/transcribe")),
+            ..TranscriptionConfig::default()
+        };
+
+        let manager = TranscriptionManager::new(&config).unwrap();
+        assert_eq!(
+            manager.resolve_provider_key("local-whisper.jarvis"),
+            Some("local_whisper".to_string())
+        );
+    }
+
+    #[test]
     fn validate_audio_rejects_oversized() {
         let big = vec![0u8; MAX_AUDIO_BYTES + 1];
         let err = validate_audio(&big, "test.ogg").unwrap_err();
@@ -1169,6 +1233,7 @@ mod tests {
         zeroclaw_config::schema::LocalWhisperConfig {
             url: url.to_string(),
             bearer_token: Some("test-token".to_string()),
+            language: None,
             max_audio_bytes: 10 * 1024 * 1024,
             timeout_secs: 30,
         }

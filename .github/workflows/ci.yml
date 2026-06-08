@@ -35,7 +35,7 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y libudev-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y libudev-dev libasound2-dev
       - name: Ensure web/dist placeholder exists
         run: mkdir -p web/dist && touch web/dist/.gitkeep
       - name: Check formatting
@@ -79,7 +79,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Install mold linker
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y mold
+        run: sudo apt-get update -qq && sudo apt-get install -y mold libasound2-dev
       - name: Ensure web/dist placeholder exists
         shell: bash
         run: mkdir -p web/dist && touch web/dist/.gitkeep
@@ -101,7 +101,7 @@ jobs:
         include:
           - name: all features
             args: --features ci-all
-            sys_deps: libudev-dev
+            sys_deps: libudev-dev libasound2-dev
           - name: no default features
             args: --no-default-features
             sys_deps: ""
@@ -160,6 +160,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
       - name: Ensure web/dist placeholder exists
         run: mkdir -p web/dist && touch web/dist/.gitkeep
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
       - name: Verify benchmarks compile
         run: cargo bench --no-run --locked
 
@@ -182,7 +184,7 @@ jobs:
       - name: Ensure web/dist placeholder exists
         run: mkdir -p web/dist && touch web/dist/.gitkeep
       - name: Install mold linker
-        run: sudo apt-get update -qq && sudo apt-get install -y mold
+        run: sudo apt-get update -qq && sudo apt-get install -y mold libasound2-dev
       - name: Install cargo-nextest
         run: curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ~/.cargo/bin
       - name: Run tests

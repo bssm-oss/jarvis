@@ -11,10 +11,12 @@ import {
   Dashboard,
   Doctor,
   Integrations,
+  JarvisControl,
   Logs,
   Onboard,
   Pairing,
   Tools,
+  VoiceActivation,
 } from './lazyPages';
 
 function RouteFallback() {
@@ -31,6 +33,7 @@ function RouteFallback() {
 export const Router = () => (
   <Suspense fallback={<RouteFallback />}>
     <Routes>
+      <Route path="/voice-activation" element={<VoiceActivation />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/agent" element={<Navigate to="/agents" replace />} />
@@ -40,6 +43,7 @@ export const Router = () => (
         <Route path="/tools" element={<Tools />} />
         <Route path="/cron" element={<Cron />} />
         <Route path="/integrations" element={<Integrations />} />
+        <Route path="/jarvis" element={<JarvisControl />} />
         <Route path="/memory" element={<Navigate to="/?tab=memories" replace />} />
         <Route path="/config" element={<Config />} />
         <Route path="/config/:section" element={<Config />} />

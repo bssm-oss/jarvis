@@ -4371,6 +4371,10 @@ pub struct LocalWhisperConfig {
     #[secret]
     #[cfg_attr(feature = "schema-export", schemars(extend("x-secret" = true)))]
     pub bearer_token: Option<String>,
+    /// Optional BCP-47 language code forwarded to the endpoint (e.g. `"ko"`, `"en"`).
+    /// When omitted the endpoint applies its own default (usually auto-detect).
+    #[serde(default)]
+    pub language: Option<String>,
     /// Maximum audio file size in bytes accepted by this endpoint.
     /// Defaults to 25 MB — matching the cloud API cap for a safe out-of-the-box
     /// experience. Self-hosted endpoints can accept much larger files; raise this
@@ -12682,6 +12686,47 @@ pub struct VoiceWakeConfig {
     #[serde(default = "default_voice_wake_max_capture_secs")]
     pub max_capture_secs: u32,
 
+    /// Require a clap gesture before listening for the wake word.
+    /// Default: `false`, preserving the original voice-wake behavior.
+    #[serde(default)]
+    pub clap_gate_enabled: bool,
+
+    /// Number of clap peaks required to arm wake-word listening.
+    /// Default: `2`.
+    #[serde(default = "default_voice_wake_clap_count")]
+    pub clap_count: u8,
+
+    /// RMS energy threshold used to recognize clap peaks.
+    /// Default: `0.25`.
+    #[serde(default = "default_voice_wake_clap_energy_threshold")]
+    pub clap_energy_threshold: f32,
+
+    /// Maximum time between clap peaks for the gesture, in milliseconds.
+    /// Default: `900`.
+    #[serde(default = "default_voice_wake_clap_window_ms")]
+    pub clap_window_ms: u32,
+
+    /// Minimum time between counted clap peaks, in milliseconds.
+    /// Default: `120`.
+    #[serde(default = "default_voice_wake_clap_cooldown_ms")]
+    pub clap_cooldown_ms: u32,
+
+    /// Time allowed after the clap gesture for the wake word, in milliseconds.
+    /// Default: `5000`.
+    #[serde(default = "default_voice_wake_clap_gate_timeout_ms")]
+    pub clap_gate_timeout_ms: u32,
+
+    /// Text spoken by the activation overlay after the wake name is confirmed.
+    /// Default: `"네 주인님 무엇을 도와드릴까요?"`.
+    #[serde(default = "default_voice_wake_activation_ack_text")]
+    pub activation_ack_text: String,
+
+    /// Milliseconds to wait after wake confirmation before capturing the next
+    /// utterance. This gives the activation TTS prompt time to play without
+    /// being captured as the user's command. Default: `1800`.
+    #[serde(default = "default_voice_wake_post_wake_capture_delay_ms")]
+    pub post_wake_capture_delay_ms: u32,
+
     /// Tools excluded from this channel's tool spec. When set, these tools
     /// are not exposed to the model when responding via this channel.
     #[serde(default)]
@@ -12704,6 +12749,34 @@ fn default_voice_wake_max_capture_secs() -> u32 {
     30
 }
 
+fn default_voice_wake_clap_count() -> u8 {
+    2
+}
+
+fn default_voice_wake_clap_energy_threshold() -> f32 {
+    0.25
+}
+
+fn default_voice_wake_clap_window_ms() -> u32 {
+    900
+}
+
+fn default_voice_wake_clap_cooldown_ms() -> u32 {
+    120
+}
+
+fn default_voice_wake_clap_gate_timeout_ms() -> u32 {
+    5000
+}
+
+fn default_voice_wake_activation_ack_text() -> String {
+    "네 주인님 무엇을 도와드릴까요?".into()
+}
+
+fn default_voice_wake_post_wake_capture_delay_ms() -> u32 {
+    1800
+}
+
 impl Default for VoiceWakeConfig {
     fn default() -> Self {
         Self {
@@ -12712,6 +12785,14 @@ impl Default for VoiceWakeConfig {
             silence_timeout_ms: default_voice_wake_silence_timeout_ms(),
             energy_threshold: default_voice_wake_energy_threshold(),
             max_capture_secs: default_voice_wake_max_capture_secs(),
+            clap_gate_enabled: false,
+            clap_count: default_voice_wake_clap_count(),
+            clap_energy_threshold: default_voice_wake_clap_energy_threshold(),
+            clap_window_ms: default_voice_wake_clap_window_ms(),
+            clap_cooldown_ms: default_voice_wake_clap_cooldown_ms(),
+            clap_gate_timeout_ms: default_voice_wake_clap_gate_timeout_ms(),
+            activation_ack_text: default_voice_wake_activation_ack_text(),
+            post_wake_capture_delay_ms: default_voice_wake_post_wake_capture_delay_ms(),
             excluded_tools: Vec::new(),
         }
     }

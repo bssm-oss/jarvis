@@ -5996,6 +5996,61 @@ impl ActiveChannelAliases {
     }
 }
 
+fn sorted_enabled_agent_aliases(config: &Config) -> Vec<String> {
+    let mut aliases: Vec<String> = config
+        .agents
+        .iter()
+        .filter(|(_, a)| a.enabled)
+        .map(|(alias, _)| alias.clone())
+        .collect();
+    aliases.sort();
+    aliases
+}
+
+fn owner_agent_for_channel_ref(config: &Config, channel_ref: &str) -> Option<String> {
+    let enabled_agents = sorted_enabled_agent_aliases(config);
+    let mut explicit_owner = None;
+    let mut any_explicit_channels = false;
+
+    for alias in &enabled_agents {
+        let Some(agent_cfg) = config.agents.get(alias) else {
+            continue;
+        };
+        if !agent_cfg.channels.is_empty() {
+            any_explicit_channels = true;
+        }
+        if agent_cfg
+            .channels
+            .iter()
+            .any(|ch| ch.as_ref() == channel_ref)
+        {
+            explicit_owner = Some(alias.clone());
+        }
+    }
+
+    explicit_owner.or_else(|| {
+        if any_explicit_channels {
+            return None;
+        }
+        config
+            .resolved_runtime_agent_alias()
+            .filter(|alias| enabled_agents.iter().any(|enabled| enabled == *alias))
+            .map(ToString::to_string)
+            .or_else(|| enabled_agents.first().cloned())
+    })
+}
+
+fn agent_transcription_provider_for_channel_ref(config: &Config, channel_ref: &str) -> String {
+    owner_agent_for_channel_ref(config, channel_ref)
+        .and_then(|owner| {
+            config
+                .agents
+                .get(&owner)
+                .map(|agent| agent.transcription_provider.as_str().to_string())
+        })
+        .unwrap_or_default()
+}
+
 /// Build `channel_key → Arc<dyn Channel>` map from config.
 ///
 /// Constructs channel instances without starting listen loops.
@@ -6066,11 +6121,11 @@ fn collect_configured_channels(
     // outlive the function capture `config_arc.clone()`.
     let config = config_arc.read();
 
+    let enabled_agent_aliases = sorted_enabled_agent_aliases(&config);
     let active_channel_aliases = ActiveChannelAliases {
-        aliases: config
-            .agents
-            .values()
-            .filter(|a| a.enabled)
+        aliases: enabled_agent_aliases
+            .iter()
+            .filter_map(|alias| config.agents.get(alias))
             .flat_map(|a| a.channels.iter().map(|c| c.as_str().to_string()))
             .collect(),
     };
@@ -7268,19 +7323,29 @@ fn collect_configured_channels(
 
     #[cfg(feature = "voice-wake")]
     for (alias, vw) in &config.channels.voice_wake {
-        if !active_channel_aliases.contains(&format!("voice_wake.{alias}")) {
+        let channel_ref = format!("voice_wake.{alias}");
+        if !active_channel_aliases.contains(&channel_ref) {
             continue;
         }
         if !vw.enabled {
             continue;
         }
+        let transcription_provider_resolver: Arc<dyn Fn() -> String + Send + Sync> = {
+            let cfg_arc = Arc::clone(config_arc);
+            let channel_ref = channel_ref.clone();
+            Arc::new(move || {
+                let cfg = cfg_arc.read();
+                agent_transcription_provider_for_channel_ref(&cfg, &channel_ref)
+            })
+        };
         channels.push(ConfiguredChannel {
             display_name: "VoiceWake",
             alias: Some(alias.clone()),
-            channel: Arc::new(VoiceWakeChannel::new(
+            channel: Arc::new(VoiceWakeChannel::new_with_transcription_provider_resolver(
                 alias.clone(),
                 vw.clone(),
                 config.transcription.clone(),
+                transcription_provider_resolver,
             )),
         });
     }
@@ -7679,17 +7744,38 @@ pub async fn start_channels(
             .await?,
         );
 
-        if let Err(e) = model_provider.warmup().await {
-            ::zeroclaw_log::record!(
-                WARN,
-                ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note)
-                    .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
-                    .with_attrs(
-                        ::serde_json::json!({"error": format!("{}", e), "agent": agent_alias})
-                    ),
-                "ModelProvider warmup failed (non-fatal)"
-            );
-        }
+        let warmup_timeout = Duration::from_secs(5);
+        let warmup_agent_alias = agent_alias.clone();
+        let warmup_model_provider = Arc::clone(&model_provider);
+        tokio::spawn(async move {
+            match tokio::time::timeout(warmup_timeout, warmup_model_provider.warmup()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    ::zeroclaw_log::record!(
+                        WARN,
+                        ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note)
+                            .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
+                            .with_attrs(::serde_json::json!({
+                                "error": format!("{}", e),
+                                "agent": warmup_agent_alias,
+                            })),
+                        "ModelProvider warmup failed (non-fatal)"
+                    );
+                }
+                Err(_) => {
+                    ::zeroclaw_log::record!(
+                        WARN,
+                        ::zeroclaw_log::Event::new(module_path!(), ::zeroclaw_log::Action::Note)
+                            .with_outcome(::zeroclaw_log::EventOutcome::Unknown)
+                            .with_attrs(::serde_json::json!({
+                                "agent": warmup_agent_alias,
+                                "timeout_secs": warmup_timeout.as_secs(),
+                            })),
+                        "ModelProvider warmup timed out (non-fatal)"
+                    );
+                }
+            }
+        });
 
         let security = Arc::new(SecurityPolicy::for_agent(&config, agent_alias)?);
         let model = agent_provider_entry
@@ -9231,6 +9317,30 @@ mod tests {
             Some("alpha")
         );
         assert_eq!(owners.get("mattermost").map(String::as_str), Some("alpha"));
+    }
+
+    #[test]
+    fn channel_transcription_provider_resolves_from_owning_agent() {
+        let mut config = Config::default();
+        config.agents.clear();
+        config.agents.insert(
+            "jarvis".to_string(),
+            zeroclaw_config::schema::AliasedAgentConfig {
+                enabled: true,
+                channels: vec![zeroclaw_config::providers::ChannelRef::new(
+                    "voice_wake.jarvis",
+                )],
+                transcription_provider: zeroclaw_config::providers::TranscriptionProviderRef::new(
+                    "local-whisper.jarvis",
+                ),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            agent_transcription_provider_for_channel_ref(&config, "voice_wake.jarvis"),
+            "local-whisper.jarvis"
+        );
     }
 
     #[test]
