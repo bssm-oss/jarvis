@@ -1,1 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" fill="#DC322F" rx="16"/><text x="64" y="80" fill="#fff" font-family="monospace" font-size="64" font-weight="bold" text-anchor="middle">Z</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Jarvis app icon">
+  <defs>
+    <linearGradient id="bg" x1="84" y1="56" x2="438" y2="466" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a2626"/>
+      <stop offset="0.56" stop-color="#201d1d"/>
+      <stop offset="1" stop-color="#121111"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="112" y1="92" x2="406" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fdfcfc"/>
+      <stop offset="0.43" stop-color="#4df3ca"/>
+      <stop offset="1" stop-color="#007aff"/>
+    </linearGradient>
+    <linearGradient id="core" x1="190" y1="164" x2="333" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#343030"/>
+      <stop offset="1" stop-color="#171515"/>
+    </linearGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="11"/>
+      <feColorMatrix values="0 0 0 0 0.063 0 0 0 0 0.925 0 0 0 0 0.765 0 0 0 0.72 0"/>
+      <feBlend in="SourceGraphic"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="92" fill="url(#bg)"/>
+  <rect x="18" y="18" width="476" height="476" rx="76" fill="none" stroke="#fdfcfc" stroke-opacity="0.07" stroke-width="2"/>
+  <rect x="42" y="42" width="428" height="428" rx="58" fill="none" stroke="#4b4646" stroke-opacity="0.42" stroke-width="2"/>
+
+  <path d="M110 178c26-47 72-82 126-94" fill="none" stroke="#fdfcfc" stroke-opacity="0.44" stroke-width="16" stroke-linecap="round"/>
+  <path d="M92 254c0-26 5-51 15-74" fill="none" stroke="#30d158" stroke-opacity="0.8" stroke-width="16" stroke-linecap="round"/>
+  <path d="M402 334c-26 47-72 82-126 94" fill="none" stroke="#007aff" stroke-opacity="0.7" stroke-width="16" stroke-linecap="round"/>
+  <path d="M420 256c0 27-5 53-16 76" fill="none" stroke="#fdfcfc" stroke-opacity="0.32" stroke-width="16" stroke-linecap="round"/>
+
+  <circle cx="256" cy="256" r="130" fill="#0c0b0b" fill-opacity="0.64"/>
+  <circle cx="256" cy="256" r="113" fill="url(#core)" stroke="#646262" stroke-opacity="0.5" stroke-width="2"/>
+  <circle cx="256" cy="256" r="83" fill="none" stroke="url(#signal)" stroke-width="14" filter="url(#softGlow)"/>
+  <circle cx="256" cy="256" r="83" fill="none" stroke="#fdfcfc" stroke-opacity="0.16" stroke-width="2"/>
+
+  <path d="M294 184v101c0 42-26 67-70 67-22 0-40-6-55-17" fill="none" stroke="#fdfcfc" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M294 184v101c0 42-26 67-70 67-22 0-40-6-55-17" fill="none" stroke="#4df3ca" stroke-opacity="0.56" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M338 185h-77" fill="none" stroke="#fdfcfc" stroke-width="32" stroke-linecap="round"/>
+  <path d="M338 185h-77" fill="none" stroke="#4df3ca" stroke-opacity="0.56" stroke-width="10" stroke-linecap="round"/>
+
+  <path d="M178 256h22M232 224v112M256 204v152M280 224v112M312 256h22" fill="none" stroke="#30d158" stroke-width="12" stroke-linecap="round" stroke-opacity="0.92"/>
+  <path d="M155 406h202" fill="none" stroke="#fdfcfc" stroke-opacity="0.2" stroke-width="10" stroke-linecap="round"/>
+</svg>
