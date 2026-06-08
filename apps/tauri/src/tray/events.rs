@@ -9,6 +9,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         "jarvis" => show_main_window(app, Some("/jarvis")),
         "hide" => hide_all_windows(app),
         "quit" => {
+            #[cfg(target_os = "macos")]
+            crate::macos::launch_agents::quit_completely();
             app.exit(0);
         }
         _ => {}

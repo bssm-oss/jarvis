@@ -130,6 +130,7 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 app.set_dock_visibility(false);
                 set_dock_icon();
+                macos::launch_agents::start_background_services();
             }
 
             // Set up the system tray.

@@ -16,6 +16,8 @@ const JARVIS_LAUNCH_AGENTS: &[&str] = &[
     "ai.zeroclaw.local-whisper",
     "ai.zeroclaw.desktop-dev",
 ];
+const DESKTOP_AGENT_LABEL: &str = "ai.zeroclaw.desktop-dev";
+const DESKTOP_PROCESS_PATTERN: &str = "zeroclaw-desktop";
 
 #[tauri::command]
 pub fn get_output_volume() -> Result<Option<u8>, String> {
@@ -52,9 +54,9 @@ pub fn get_launch_agent_statuses() -> Result<Vec<LaunchAgentInfo>, String> {
             return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
         }
 
-        return Ok(parse_launchctl_list(&String::from_utf8_lossy(
-            &output.stdout,
-        )));
+        let mut statuses = parse_launchctl_list(&String::from_utf8_lossy(&output.stdout));
+        apply_desktop_process_fallback(&mut statuses);
+        return Ok(statuses);
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -118,9 +120,43 @@ fn parse_launchctl_line(line: &str) -> Option<LaunchAgentInfo> {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn apply_desktop_process_fallback(statuses: &mut [LaunchAgentInfo]) {
+    let Some(pid) = find_desktop_process_pid() else {
+        return;
+    };
+    if let Some(info) = statuses
+        .iter_mut()
+        .find(|info| info.label == DESKTOP_AGENT_LABEL && !info.running)
+    {
+        info.pid = Some(pid);
+        info.last_exit_status = None;
+        info.running = true;
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn find_desktop_process_pid() -> Option<i32> {
+    let output = Command::new("pgrep")
+        .args(["-f", DESKTOP_PROCESS_PATTERN])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_first_pid(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(target_os = "macos")]
+fn parse_first_pid(raw: &str) -> Option<i32> {
+    raw.lines()
+        .find_map(|line| line.trim().parse::<i32>().ok())
+        .filter(|pid| *pid > 0)
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use super::{parse_launchctl_list, parse_output_volume};
+    use super::{parse_first_pid, parse_launchctl_list, parse_output_volume};
 
     #[test]
     fn parses_output_volume() {
@@ -141,5 +177,12 @@ mod tests {
         assert!(parsed[1].running);
         assert!(!parsed[2].running);
         assert_eq!(parsed[2].last_exit_status, Some(-15));
+    }
+
+    #[test]
+    fn parses_first_process_pid() {
+        assert_eq!(parse_first_pid("123\n456\n"), Some(123));
+        assert_eq!(parse_first_pid("-\n456\n"), Some(456));
+        assert_eq!(parse_first_pid(""), None);
     }
 }
