@@ -4371,6 +4371,10 @@ pub struct LocalWhisperConfig {
     #[secret]
     #[cfg_attr(feature = "schema-export", schemars(extend("x-secret" = true)))]
     pub bearer_token: Option<String>,
+    /// Optional BCP-47 language code forwarded to the endpoint (e.g. `"ko"`, `"en"`).
+    /// When omitted the endpoint applies its own default (usually auto-detect).
+    #[serde(default)]
+    pub language: Option<String>,
     /// Maximum audio file size in bytes accepted by this endpoint.
     /// Defaults to 25 MB — matching the cloud API cap for a safe out-of-the-box
     /// experience. Self-hosted endpoints can accept much larger files; raise this

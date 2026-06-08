@@ -591,6 +591,7 @@ pub struct LocalWhisperProvider {
     alias: String,
     url: String,
     bearer_token: String,
+    language: Option<String>,
     max_audio_bytes: usize,
     timeout_secs: u64,
 }
@@ -634,6 +635,7 @@ impl LocalWhisperProvider {
             alias: alias.to_string(),
             url,
             bearer_token,
+            language: config.language.clone(),
             max_audio_bytes: config.max_audio_bytes,
             timeout_secs: config.timeout_secs,
         })
@@ -667,10 +669,15 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .file_name(normalized_name)
             .mime_str(mime)?;
 
+        let mut form = Form::new().part("file", file_part);
+        if let Some(ref lang) = self.language {
+            form = form.text("language", lang.clone());
+        }
+
         let resp = client
             .post(&self.url)
             .bearer_auth(&self.bearer_token)
-            .multipart(Form::new().part("file", file_part))
+            .multipart(form)
             .timeout(std::time::Duration::from_secs(self.timeout_secs))
             .send()
             .await
@@ -1226,6 +1233,7 @@ mod tests {
         zeroclaw_config::schema::LocalWhisperConfig {
             url: url.to_string(),
             bearer_token: Some("test-token".to_string()),
+            language: None,
             max_audio_bytes: 10 * 1024 * 1024,
             timeout_secs: 30,
         }
