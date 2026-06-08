@@ -20,6 +20,7 @@ import {
 import { Router } from './router/router';
 
 const zeroClawLogoSrc = `${basePath}${import.meta.env.PROD ? '/_app/logo.png' : '/logo.png'}`;
+const VOICE_ACTIVATION_BRIDGE_MAX_AGE_MS = 12_000;
 
 // Locale context
 interface LocaleContextType {
@@ -218,6 +219,7 @@ function VoiceActivationBridge() {
 
   const handleSignal = useCallback((signal: VoiceActivationSignal, key: string) => {
     if (handledRef.current.has(key)) return;
+    if (Date.now() - signal.createdAt > VOICE_ACTIVATION_BRIDGE_MAX_AGE_MS) return;
     handledRef.current.add(key);
     if (handledRef.current.size > 200) {
       handledRef.current = new Set(Array.from(handledRef.current).slice(-100));
