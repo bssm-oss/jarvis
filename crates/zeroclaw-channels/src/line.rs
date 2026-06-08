@@ -2013,6 +2013,7 @@ mod tests {
             local_whisper: Some(zeroclaw_config::schema::LocalWhisperConfig {
                 url: format!("{}/v1/transcribe", api_server.uri()),
                 bearer_token: Some("test-token".to_string()),
+                language: None,
                 max_audio_bytes: 25 * 1024 * 1024,
                 timeout_secs: 300,
             }),

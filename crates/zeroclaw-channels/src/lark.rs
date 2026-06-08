@@ -4527,6 +4527,7 @@ mod tests {
             local_whisper: Some(zeroclaw_config::schema::LocalWhisperConfig {
                 url: "http://localhost:0/v1/transcribe".to_string(),
                 bearer_token: Some("unused".to_string()),
+                language: None,
                 max_audio_bytes: 10 * 1024 * 1024,
                 timeout_secs: 30,
             }),
@@ -4611,6 +4612,7 @@ mod tests {
             local_whisper: Some(zeroclaw_config::schema::LocalWhisperConfig {
                 url: format!("{}/v1/transcribe", whisper_server.uri()),
                 bearer_token: Some("test-token".to_string()),
+                language: None,
                 max_audio_bytes: 10 * 1024 * 1024,
                 timeout_secs: 30,
             }),
