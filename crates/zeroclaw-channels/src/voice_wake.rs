@@ -60,9 +60,11 @@ pub enum ClapGateEvent {
 pub struct ClapDetector {
     required_count: u8,
     threshold: f32,
+    release_threshold: f32,
     window: Duration,
     cooldown: Duration,
     count: u8,
+    ready_for_peak: bool,
     first_clap_at: Option<Instant>,
     last_clap_at: Option<Instant>,
 }
@@ -73,9 +75,11 @@ impl ClapDetector {
         Self {
             required_count: required_count.max(1),
             threshold,
+            release_threshold: threshold * 0.45,
             window,
             cooldown,
             count: 0,
+            ready_for_peak: true,
             first_clap_at: None,
             last_clap_at: None,
         }
@@ -83,6 +87,7 @@ impl ClapDetector {
 
     pub fn reset(&mut self) {
         self.count = 0;
+        self.ready_for_peak = true;
         self.first_clap_at = None;
         self.last_clap_at = None;
     }
@@ -96,6 +101,10 @@ impl ClapDetector {
             expired = true;
         }
 
+        if energy <= self.release_threshold {
+            self.ready_for_peak = true;
+        }
+
         if !is_clap_energy(energy, self.threshold) {
             return if expired {
                 ClapGateEvent::Expired
@@ -104,11 +113,17 @@ impl ClapDetector {
             };
         }
 
+        if !self.ready_for_peak {
+            return ClapGateEvent::None;
+        }
+
         if let Some(last_clap_at) = self.last_clap_at
             && now.duration_since(last_clap_at) < self.cooldown
         {
             return ClapGateEvent::None;
         }
+
+        self.ready_for_peak = false;
 
         if self.count == 0 {
             self.first_clap_at = Some(now);
@@ -1195,6 +1210,11 @@ mod tests {
             "first clap should arm the gesture gate"
         );
         assert_eq!(
+            detector.observe(0.001, start + Duration::from_millis(80)),
+            ClapGateEvent::None,
+            "energy must drop before the next clap peak can count"
+        );
+        assert_eq!(
             detector.observe(0.023, start + Duration::from_millis(160)),
             ClapGateEvent::Complete,
             "second clap inside the configured window should complete the gate"
@@ -1276,6 +1296,10 @@ mod tests {
 
         assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
         assert_eq!(
+            detector.observe(0.05, start + Duration::from_millis(100)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
             detector.observe(0.31, start + Duration::from_millis(200)),
             ClapGateEvent::Complete
         );
@@ -1297,8 +1321,33 @@ mod tests {
             ClapGateEvent::None
         );
         assert_eq!(
+            detector.observe(0.05, start + Duration::from_millis(80)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
             detector.observe(0.32, start + Duration::from_millis(150)),
             ClapGateEvent::Complete
+        );
+    }
+
+    #[test]
+    fn clap_detector_ignores_sustained_loud_sound() {
+        let start = Instant::now();
+        let mut detector = ClapDetector::new(
+            2,
+            0.25,
+            Duration::from_millis(900),
+            Duration::from_millis(120),
+        );
+
+        assert_eq!(detector.observe(0.30, start), ClapGateEvent::FirstClap);
+        assert_eq!(
+            detector.observe(0.31, start + Duration::from_millis(200)),
+            ClapGateEvent::None
+        );
+        assert_eq!(
+            detector.observe(0.32, start + Duration::from_millis(400)),
+            ClapGateEvent::None
         );
     }
 
