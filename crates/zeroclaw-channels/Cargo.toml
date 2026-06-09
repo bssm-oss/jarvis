@@ -148,7 +148,7 @@ shellexpand = "3.1"
 # Bot media encryption protocol. The CDN requires ECB-mode ciphertext and
 # MD5 file checksums in upload requests. Not our choice of primitives.
 aes = { version = "0.8", optional = true }
-cbc = { version = "0.1", optional = true }
+cbc = { version = "0.2", optional = true }
 ecb = { version = "0.1", optional = true }
 md5 = { version = "0.8", optional = true }
 
