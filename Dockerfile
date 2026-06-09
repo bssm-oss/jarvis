@@ -3,7 +3,7 @@
 # ── Stage 0: Frontend build ─────────────────────────────────────
 FROM node:22-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS web-node
 
-FROM rust:1.94-slim@sha256:da9dab7a6b8dd428e71718402e97207bb3e54167d37b5708616050b1e8f60ed6 AS web-builder
+FROM rust:1.96-slim@sha256:26abcef3d79b8d890c4ceb17093154573e1f6479cf6dd7c1450043b8458350f6 AS web-builder
 WORKDIR /app
 COPY --from=web-node /usr/local/bin/node /usr/local/bin/node
 COPY --from=web-node /usr/local/lib/node_modules /usr/local/lib/node_modules
@@ -26,7 +26,7 @@ RUN --mount=type=cache,id=zeroclaw-cargo-registry,target=/usr/local/cargo/regist
     cargo web build
 
 # ── Stage 1: Build ────────────────────────────────────────────
-FROM rust:1.94-slim@sha256:da9dab7a6b8dd428e71718402e97207bb3e54167d37b5708616050b1e8f60ed6 AS builder
+FROM rust:1.96-slim@sha256:26abcef3d79b8d890c4ceb17093154573e1f6479cf6dd7c1450043b8458350f6 AS builder
 
 WORKDIR /app
 ARG ZEROCLAW_CARGO_FEATURES="channel-lark,whatsapp-web"
